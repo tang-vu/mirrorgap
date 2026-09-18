@@ -1,0 +1,30 @@
+{
+  "name": "@mirrorgap/cli",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "MirrorGap CLI: scan, inspect, events, receipts, CMC proof.",
+  "bin": {
+    "mirrorgap": "./bin/mirrorgap.mjs"
+  },
+  "scripts": {
+    "dev": "tsx src/main.ts",
+    "mirrorgap": "tsx src/main.ts",
+    "build": "tsc -p tsconfig.build.json",
+    "lint": "tsc -p tsconfig.json --noEmit",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run --passWithNoTests"
+  },
+  "dependencies": {
+    "@mirrorgap/cmc": "workspace:*",
+    "@mirrorgap/core": "workspace:*",
+    "@mirrorgap/runtime": "workspace:*",
+    "@mirrorgap/storage": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^24.5.2",
+    "tsx": "^4.20.3",
+    "typescript": "^5.9.2",
+    "vitest": "^3.2.4"
+  }
+}

@@ -1,0 +1,33 @@
+{
+  "name": "mirrorgap",
+  "version": "0.1.0",
+  "private": true,
+  "description": "The market integrity layer for tokenized reality.",
+  "type": "module",
+  "packageManager": "pnpm@12.4.2",
+  "engines": {
+    "node": ">=20.10"
+  },
+  "scripts": {
+    "dev": "pnpm -F @mirrorgap/web dev",
+    "build": "pnpm -r --filter=!@mirrorgap/web build && pnpm -F @mirrorgap/web build",
+    "lint": "pnpm -r lint",
+    "typecheck": "pnpm -r typecheck",
+    "test": "pnpm -r test",
+    "test:e2e": "node scripts/demo-check.mjs",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "mirrorgap": "pnpm -F @mirrorgap/cli mirrorgap",
+    "mcp": "pnpm -F @mirrorgap/mcp start",
+    "demo:check": "node scripts/demo-check.mjs"
+  },
+  "devDependencies": {
+    "prettier": "^3.6.2"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "esbuild",
+      "better-sqlite3"
+    ]
+  }
+}

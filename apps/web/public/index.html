@@ -1,0 +1,180 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>MirrorGap — RWA Integrity Observatory</title>
+    <meta
+      name="description"
+      content="Is tokenized reality still matching reality? MirrorGap watches tokenized real-world assets against their reference observations."
+    />
+    <link rel="stylesheet" href="/style.css" />
+    <link
+      rel="icon"
+      href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><circle cx='16' cy='16' r='13' fill='none' stroke='%2344d7b6' stroke-width='2'/><circle cx='16' cy='16' r='5' fill='%2344d7b6'/></svg>"
+    />
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="brand">
+        <svg viewBox="0 0 32 32" class="logo" aria-hidden="true">
+          <circle cx="16" cy="16" r="13" fill="none" stroke="currentColor" stroke-width="2" />
+          <circle cx="16" cy="16" r="5" fill="currentColor" />
+        </svg>
+        <div>
+          <h1>MirrorGap</h1>
+          <p class="tagline">Is tokenized reality still matching reality?</p>
+        </div>
+      </div>
+      <div class="topbar-right">
+        <span id="mode-badge" class="badge badge-mode">…</span>
+        <span id="cap-badge" class="badge badge-cap" title="CMC plan capability">…</span>
+        <span id="live-dot" class="live-dot" title="SSE disconnected"></span>
+      </div>
+    </header>
+
+    <nav class="tabs">
+      <button class="tab active" data-view="radar">Integrity Radar</button>
+      <button class="tab" data-view="events">Events</button>
+      <button class="tab" data-view="about">How it works</button>
+      <div class="search-box">
+        <input id="search" type="search" placeholder="Search RWA… (NVDA, gold, TSLA)" autocomplete="off" />
+        <div id="search-results" class="search-results hidden"></div>
+      </div>
+    </nav>
+
+    <main>
+      <!-- ============ RADAR ============ -->
+      <section id="view-radar" class="view">
+        <div class="radar-layout">
+          <div class="radar-panel card">
+            <div class="card-head">
+              <h2>Parity Radar</h2>
+              <span id="radar-ts" class="muted"></span>
+            </div>
+            <div id="radar-chart" class="radar-chart"></div>
+            <div class="legend">
+              <span><i class="dot dot-none"></i> aligned</span>
+              <span><i class="dot dot-info"></i> info</span>
+              <span><i class="dot dot-watch"></i> watch</span>
+              <span><i class="dot dot-high"></i> high</span>
+              <span><i class="dot dot-critical"></i> critical</span>
+            </div>
+          </div>
+          <div class="radar-panel card">
+            <div class="card-head"><h2>Assets under observation</h2></div>
+            <table class="table" id="asset-table">
+              <thead>
+                <tr>
+                  <th>Asset</th>
+                  <th>Ref state</th>
+                  <th>Max gap</th>
+                  <th>Dispersion</th>
+                  <th>Wrappers</th>
+                  <th>Severity</th>
+                </tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============ EVENTS ============ -->
+      <section id="view-events" class="view hidden">
+        <div class="card">
+          <div class="card-head">
+            <h2>Anomaly events</h2>
+            <select id="event-filter">
+              <option value="">all</option>
+              <option value="confirmed">confirmed</option>
+              <option value="candidate">candidate</option>
+              <option value="resolved">resolved</option>
+              <option value="invalidated">invalidated</option>
+            </select>
+          </div>
+          <table class="table" id="event-table">
+            <thead>
+              <tr>
+                <th>Event</th>
+                <th>Asset</th>
+                <th>Kind</th>
+                <th>Severity</th>
+                <th>Status</th>
+                <th>Deviation</th>
+                <th>Confirmations</th>
+                <th>Last seen</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- ============ ABOUT ============ -->
+      <section id="view-about" class="view hidden">
+        <div class="card prose">
+          <h2>The system that watches whether tokenized reality still agrees with reality</h2>
+          <p>
+            MirrorGap is an autonomous observatory for tokenized real-world assets. It continuously compares
+            tokenized RWA representations against the best available reference observations, detects
+            meaningful parity gaps and cross-wrapper disagreement, and issues
+            <strong>verifiable evidence receipts</strong>.
+          </p>
+          <div class="pipeline">
+            <div class="pipe-step">CMC RWA API<br /><small>observations</small></div>
+            <div class="pipe-arrow">→</div>
+            <div class="pipe-step">
+              Deterministic engine<br /><small>parity · dispersion · freshness</small>
+            </div>
+            <div class="pipe-arrow">→</div>
+            <div class="pipe-step">Event lifecycle<br /><small>candidate → confirmed</small></div>
+            <div class="pipe-arrow">→</div>
+            <div class="pipe-step">Evidence receipt<br /><small>SHA-256 · Ed25519</small></div>
+          </div>
+          <h3>Honest by construction</h3>
+          <ul>
+            <li>
+              <code>market_closed</code> and <code>stale</code> reference states prevent after-hours
+              differences from being reported as verified parity failures.
+            </li>
+            <li>
+              Every claim is classified <em>observed / derived / supported_hypothesis / unknown</em> — the
+              engine never invents causes.
+            </li>
+            <li>
+              Receipts are canonical JSON + SHA-256. Anyone can re-hash and verify; optional Ed25519
+              signatures bind the issuer key.
+            </li>
+            <li>
+              Fixture vs live mode is always visible in the badge above and inside every provenance record.
+            </li>
+          </ul>
+          <h3>CoinMarketCap endpoints</h3>
+          <p>
+            <code>/v5/real-world-assets/map</code> · <code>/info</code> · <code>/quotes/latest</code> ·
+            <code>/assets/list</code> · <code>/issuers/list</code> · <code>/issuers</code> ·
+            <code>/market-pairs/list</code> (Growth+ feature-detected) · <code>/v1/key/info</code>
+          </p>
+        </div>
+      </section>
+
+      <!-- ============ ASSET DETAIL ============ -->
+      <section id="view-asset" class="view hidden">
+        <div id="asset-detail"></div>
+      </section>
+
+      <!-- ============ EVENT DETAIL ============ -->
+      <section id="view-event" class="view hidden">
+        <div id="event-detail"></div>
+      </section>
+    </main>
+
+    <footer class="footer">
+      <span>MirrorGap · Built for the CoinMarketCap API Hackathon · Real World Assets track</span>
+      <span class="muted">Deterministic engine — AI is an interface layer only</span>
+    </footer>
+
+    <script type="module" src="/app.js"></script>
+  </body>
+</html>
