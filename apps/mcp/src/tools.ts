@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { HISTORY_WINDOWS } from "@mirrorgap/core";
 import type { RuntimeInstance } from "@mirrorgap/runtime";
 
 /**
@@ -134,6 +135,106 @@ export function buildTools(instance: RuntimeInstance): ToolDef[] {
         const v = runtime.verifyEventReceipt(String(args["eventId"] ?? ""));
         return v ?? { error: "no receipt for event" };
       },
+    },
+    {
+      name: "mirrorgap_history",
+      description:
+        "Historical integrity time series for one tokenized RWA: signed wrapper gap, dispersion, reference freshness, market state, severity per observation, plus window statistics (peak divergence, stale/anomalous share). Deterministically downsampled within the requested window.",
+      inputSchema: {
+        asset: z.string().describe('RWA id (e.g. "2") or symbol (e.g. "NVDA")'),
+        window: z
+          .enum(HISTORY_WINDOWS as [string, ...string[]])
+          .optional()
+          .describe(`time window, one of ${HISTORY_WINDOWS.join("|")} (default 24h)`),
+        maxPoints: z.number().int().min(16).max(2000).optional(),
+      },
+      handler: async (args) => {
+        const t = String(args["asset"]);
+        const asset = /^\d+$/.test(t)
+          ? runtime.store.getAsset(Number(t))
+          : runtime.store.findAssetBySymbol(t);
+        if (!asset) return { error: `unknown asset ${t}` };
+        return runtime.assetHistory(asset.rwaId, {
+          window: (args["window"] as never) ?? "24h",
+          ...(args["maxPoints"] ? { maxPoints: Number(args["maxPoints"]) } : {}),
+        });
+      },
+    },
+    {
+      name: "mirrorgap_timeline",
+      description:
+        "Replayable incident timeline for one anomaly event: every lifecycle transition (candidate, confirmations, escalations, peak divergence, resolution) with the market/reference frame recorded at that moment. Use to explain exactly how an incident evolved.",
+      inputSchema: {
+        eventId: z.string(),
+      },
+      handler: async (args) => {
+        const tl = runtime.eventTimeline(String(args["eventId"]));
+        return tl ?? { error: "unknown event" };
+      },
+    },
+    {
+      name: "mirrorgap_capsule",
+      description:
+        "Evidence Capsule for one anomaly event: the human-readable proof bundle — incident lifecycle, observed measurements, claim summary, provenance, and the verifiable receipt with its current verification verdict. This is the shareable evidence artifact.",
+      inputSchema: {
+        eventId: z.string(),
+      },
+      handler: async (args) => {
+        const cap = runtime.evidenceCapsule(String(args["eventId"]));
+        return cap ?? { error: "no evidence capsule for event (not confirmed yet, or unknown id)" };
+      },
+    },
+    {
+      name: "mirrorgap_watchlist",
+      description:
+        "Manage the persistent watchlist: list entries, or add/remove assets by symbol or RWA id. Optional per-asset thresholds override the global info/watch/high/critical severity bands (percentages).",
+      inputSchema: {
+        action: z.enum(["list", "add", "remove"]).describe("operation (default: list)"),
+        asset: z.string().optional().describe('symbol ("NVDA") or rwa_id ("2") — required for add/remove'),
+        thresholds: z
+          .object({
+            info: z.number().nonnegative(),
+            watch: z.number().nonnegative(),
+            high: z.number().nonnegative(),
+            critical: z.number().nonnegative(),
+          })
+          .optional()
+          .describe("per-asset severity thresholds in % (add only)"),
+      },
+      handler: async (args) => {
+        const action = (args["action"] as string | undefined) ?? "list";
+        if (action === "list") {
+          return { watchlist: runtime.listWatchlist(), limit: config.watchLimit };
+        }
+        const t = String(args["asset"] ?? "");
+        if (action === "add") {
+          try {
+            const entry = await runtime.addToWatchlist({
+              ...(/^\d+$/.test(t) ? { rwaId: Number(t) } : { symbol: t.toUpperCase() }),
+              thresholds: (args["thresholds"] as never) ?? null,
+            });
+            return { added: entry };
+          } catch (err) {
+            return { error: err instanceof Error ? err.message : String(err) };
+          }
+        }
+        if (action === "remove") {
+          const asset = /^\d+$/.test(t)
+            ? runtime.store.getAsset(Number(t))
+            : runtime.store.findAssetBySymbol(t);
+          if (!asset) return { error: `unknown asset ${t}` };
+          const removed = runtime.removeFromWatchlist(asset.rwaId);
+          return removed ? { removed: asset.symbol } : { error: `${asset.symbol} not on watchlist` };
+        }
+        return { error: `unknown action ${action}` };
+      },
+    },
+    {
+      name: "mirrorgap_overview",
+      description:
+        "Observatory overview: assets watched, anomalous assets, open/confirmed incidents, critical-or-high count, latest scan, event counts by status, storage counters, alert and signing configuration. The one-call answer to 'what is the system seeing right now?'.",
+      inputSchema: {},
+      handler: async () => runtime.overview(),
     },
     {
       name: "mirrorgap_cmc_status",

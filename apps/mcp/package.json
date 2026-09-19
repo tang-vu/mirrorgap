@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "MirrorGap MCP server — RWA integrity tools for AI agents.",
+  "description": "MirrorGap MCP server \u00e2\u20ac\u201d RWA integrity tools for AI agents.",
   "scripts": {
     "dev": "tsx src/server.ts",
     "start": "tsx src/server.ts",
@@ -18,11 +18,11 @@
     "@mirrorgap/runtime": "workspace:*",
     "@mirrorgap/storage": "workspace:*",
     "@modelcontextprotocol/sdk": "^1.30.0",
-    "zod": "^4.1.8"
+    "zod": "^4.1.8",
+    "tsx": "^4.20.3"
   },
   "devDependencies": {
     "@types/node": "^24.5.2",
-    "tsx": "^4.20.3",
     "typescript": "^5.9.2",
     "vitest": "^3.2.4"
   }
