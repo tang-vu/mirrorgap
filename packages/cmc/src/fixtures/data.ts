@@ -324,9 +324,67 @@ export type FixtureQuotesEntry = RwaQuotesEntry & {
   description?: string | null;
 };
 
+/**
+ * incident_cycle — a scripted divergence arc on NVDA (rwa_id 2), keyed by a
+ * deterministic tick (one per scan). The arc produces a full anomaly
+ * lifecycle through real engine code paths:
+ *
+ *   tick 0-1  quiet, inside thresholds (~±0.07%)
+ *   tick 2    info band (~±0.28%) — candidate appears
+ *   tick 3    watch (~±0.72%)
+ *   tick 4-5  high (~±1.2% / ±1.7%)
+ *   tick 6    critical peak (~±2.2%)
+ *   tick 7    high, receding (~±1.45%)
+ *   tick 8    watch (~±0.68%)
+ *   tick 9    back inside thresholds → resolves
+ *   tick 10-11 quiet — then the cycle repeats (recurrence evidence)
+ *
+ * NVDAX dips while NVDAon rises: both a parity gap AND cross-wrapper
+ * dispersion. Prices are invented; nothing is presented as live data.
+ */
+const INCIDENT_CYCLE: { nvdax: number; nvdaon: number }[] = [
+  { nvdax: 228.34, nvdaon: 228.66 }, // 0 quiet
+  { nvdax: 228.34, nvdaon: 228.66 }, // 1 quiet
+  { nvdax: 228.18, nvdaon: 228.82 }, // 2 info  ±0.28%
+  { nvdax: 227.86, nvdaon: 229.14 }, // 3 watch ±0.72%
+  { nvdax: 225.76, nvdaon: 231.24 }, // 4 high  ±1.20%
+  { nvdax: 224.62, nvdaon: 232.38 }, // 5 high  ±1.70%
+  { nvdax: 223.47, nvdaon: 233.53 }, // 6 crit  ±2.20%
+  { nvdax: 225.19, nvdaon: 231.81 }, // 7 high  ±1.45%
+  { nvdax: 226.95, nvdaon: 230.05 }, // 8 watch ±0.68%
+  { nvdax: 228.36, nvdaon: 228.64 }, // 9 resolved
+  { nvdax: 228.42, nvdaon: 228.58 }, // 10 quiet
+  { nvdax: 228.4, nvdaon: 228.6 }, // 11 quiet
+];
+
+export function incidentCyclePrices(tick: number): { nvdax: number; nvdaon: number } {
+  const i = ((Math.max(0, tick) % INCIDENT_CYCLE.length) + INCIDENT_CYCLE.length) % INCIDENT_CYCLE.length;
+  return INCIDENT_CYCLE[i]!;
+}
+
+/** Apply a scenario's scripted overrides to the static fixture set. */
+function applyScenario(assets: FixtureAsset[], tick: number, scenario: string): FixtureAsset[] {
+  if (scenario !== "incident_cycle") return assets;
+  const p = incidentCyclePrices(tick);
+  return assets.map((a) => {
+    if (a.rwa_id !== 2) return a;
+    return {
+      ...a,
+      tokens: (a.tokens ?? []).map((t) =>
+        t.symbol === "NVDAX"
+          ? { ...t, price: p.nvdax, volume_24h: 9_187_859.27 }
+          : t.symbol === "NVDAon"
+            ? { ...t, price: p.nvdaon, volume_24h: 21_634_471.7 }
+            : t,
+      ),
+    };
+  });
+}
+
 /** Fill the aggregate quote for each asset deterministically. */
-export function materializeFixtures(now: Date): FixtureQuotesEntry[] {
-  return FIXTURE_ASSETS.map((a) => {
+export function materializeFixtures(now: Date, tick = 0, scenario = "static"): FixtureQuotesEntry[] {
+  const assets = applyScenario(FIXTURE_ASSETS, tick, scenario);
+  return assets.map((a) => {
     const priced = (a.tokens ?? []).filter((t) => typeof t.price === "number" && t.price > 0);
     const avg = priced.length > 0 ? priced.reduce((s, t) => s + (t.price ?? 0), 0) / priced.length : null;
     const mcap = (a.tokens ?? []).reduce((s, t) => s + (t.market_cap ?? 0), 0);

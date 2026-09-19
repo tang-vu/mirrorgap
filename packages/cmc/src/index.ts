@@ -22,6 +22,8 @@ export interface CreateSourceOptions {
   cache?: TtlCache;
   fetchFn?: typeof fetch;
   sleep?: (ms: number) => Promise<void>;
+  /** Fixture scenario id — "static" | "incident_cycle" (default). */
+  fixtureScenario?: string;
 }
 
 /**
@@ -38,7 +40,12 @@ export function createDataSource(opts: CreateSourceOptions): {
   const sink = opts.diagnostics ?? diagnostics;
 
   if (opts.mode === "fixture") {
-    return { source: new FixtureDataSource(), diagnostics };
+    return {
+      source: new FixtureDataSource(
+        opts.fixtureScenario !== undefined ? { scenario: opts.fixtureScenario } : {},
+      ),
+      diagnostics,
+    };
   }
 
   const key = opts.apiKey?.trim();

@@ -48,6 +48,12 @@ export interface RwaIdentifier {
 export interface RwaDataSource {
   readonly mode: "live" | "fixture";
   capabilities(): { marketPairs: Capability };
+  /**
+   * Advance a scripted fixture one tick (and optionally pin its clock to
+   * `now`). Live sources do not implement this — the runtime calls it via
+   * optional chaining after each quotes fetch.
+   */
+  advance?(now?: Date): void;
   listRwaMap(opts?: {
     assetType?: string;
     symbol?: string[];

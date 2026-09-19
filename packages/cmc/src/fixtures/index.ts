@@ -20,35 +20,57 @@ import {
   type FixtureQuotesEntry,
 } from "./data.js";
 
-function prov(endpoint: string, params: Record<string, string | number | boolean>) {
-  return {
-    endpoint,
-    params,
-    retrievedAt: new Date().toISOString(),
-    requestId: "fixture",
-    dataMode: "fixture" as const,
-    creditCount: 0,
-  };
-}
-
-const ok = <T>(
-  endpoint: string,
-  params: Record<string, string | number | boolean>,
-  data: T,
-): CmcResult<T> => ({
-  data,
-  provenance: prov(endpoint, params),
-  cacheHit: false,
-  creditCount: 0,
-});
-
 /**
  * Deterministic fixture data source — same contract as the live CMC adapter.
  * Clearly marked `mode: "fixture"` in every provenance record so fixture
  * output can never be confused with live data downstream.
+ *
+ * Scenarios (`MIRRORGAP_FIXTURE_SCENARIO`):
+ *   - "static"          fixed prices — every scan sees identical data
+ *   - "incident_cycle"  (default) NVDA follows a scripted divergence arc, one
+ *                       tick per scan, producing real anomaly lifecycles
+ *
+ * `advance(now)` is called once per scan by the runtime: it bumps the tick
+ * and pins the fixture clock so retrieval timestamps match the scan's time
+ * base (essential for deterministic seeded history).
  */
 export class FixtureDataSource implements RwaDataSource {
   readonly mode = "fixture" as const;
+  private tick = -1;
+  private nowOverride: Date | null = null;
+  private readonly scenario: string;
+
+  constructor(opts: { scenario?: string } = {}) {
+    this.scenario = opts.scenario ?? "incident_cycle";
+  }
+
+  get currentTick(): number {
+    return Math.max(0, this.tick);
+  }
+
+  advance(now?: Date): void {
+    this.tick += 1;
+    if (now) this.nowOverride = now;
+  }
+
+  private now(): Date {
+    return this.nowOverride ?? new Date();
+  }
+
+  private prov(endpoint: string, params: Record<string, string | number | boolean>) {
+    return {
+      endpoint,
+      params,
+      retrievedAt: this.now().toISOString(),
+      requestId: `fixture:t${this.currentTick}`,
+      dataMode: "fixture" as const,
+      creditCount: 0,
+    };
+  }
+
+  private ok<T>(endpoint: string, params: Record<string, string | number | boolean>, data: T): CmcResult<T> {
+    return { data, provenance: this.prov(endpoint, params), cacheHit: false, creditCount: 0 };
+  }
 
   capabilities(): { marketPairs: Capability } {
     // Fixture simulates a Startup plan: market-pairs is unavailable.
@@ -56,18 +78,26 @@ export class FixtureDataSource implements RwaDataSource {
   }
 
   async listRwaMap(opts: { assetType?: string; symbol?: string[] } = {}): Promise<CmcResult<RwaMapEntry[]>> {
-    let entries = fixtureMap(new Date());
+    let entries = fixtureMap(this.now());
     if (opts.assetType) entries = entries.filter((e) => e.asset_type === opts.assetType);
     if (opts.symbol?.length) {
       const wanted = new Set(opts.symbol.map((s) => s.toUpperCase()));
       entries = entries.filter((e) => wanted.has(e.symbol.toUpperCase()));
     }
-    return ok("/v5/real-world-assets/map", opts.assetType ? { asset_type: opts.assetType } : {}, entries);
+    return this.ok(
+      "/v5/real-world-assets/map",
+      opts.symbol?.length
+        ? { symbol: opts.symbol.join(",") }
+        : opts.assetType
+          ? { asset_type: opts.assetType }
+          : {},
+      entries,
+    );
   }
 
   async getRwaInfo(id: RwaIdentifier): Promise<CmcResult<RwaInfoEntry[]>> {
     const assets = this.select<FixtureQuotesEntry>(id);
-    return ok(
+    return this.ok(
       "/v5/real-world-assets/info",
       this.idParams(id),
       assets.map((a) => ({
@@ -97,9 +127,9 @@ export class FixtureDataSource implements RwaDataSource {
   }
 
   async listRwaAssets(opts: { assetType?: string } = {}): Promise<CmcResult<RwaListEntry[]>> {
-    let assets = materializeFixtures(new Date());
+    let assets = materializeFixtures(this.now(), this.currentTick, this.scenario);
     if (opts.assetType) assets = assets.filter((a) => a.asset_type === opts.assetType);
-    return ok(
+    return this.ok(
       "/v5/real-world-assets/assets/list",
       {},
       assets.map(({ quotes: _q, tokens: _t, tradfi_markets: _m, ...rest }) => rest),
@@ -107,13 +137,13 @@ export class FixtureDataSource implements RwaDataSource {
   }
 
   async getRwaQuotes(id: RwaIdentifier): Promise<CmcResult<RwaQuotesEntry[]>> {
-    const all = materializeFixtures(new Date());
+    const all = materializeFixtures(this.now(), this.currentTick, this.scenario);
     const selected = this.select(id, all);
-    return ok("/v5/real-world-assets/quotes/latest", this.idParams(id), selected);
+    return this.ok("/v5/real-world-assets/quotes/latest", this.idParams(id), selected);
   }
 
   async listIssuers(): Promise<CmcResult<RwaIssuerListEntry[]>> {
-    return ok("/v5/real-world-assets/issuers/list", {}, FIXTURE_ISSUERS);
+    return this.ok("/v5/real-world-assets/issuers/list", {}, FIXTURE_ISSUERS);
   }
 
   async getIssuer(issuerId: string): Promise<CmcResult<RwaIssuerResponse["data"]>> {
@@ -126,17 +156,20 @@ export class FixtureDataSource implements RwaDataSource {
         httpStatus: 400,
       });
     }
-    return ok("/v5/real-world-assets/issuers", { issuer_id: issuerId }, d);
+    return this.ok("/v5/real-world-assets/issuers", { issuer_id: issuerId }, d);
   }
 
   async getMarketPairs(
     id: RwaIdentifier,
   ): Promise<CmcResult<{ available: boolean; pairs: RwaMarketPair[] }>> {
-    return ok("/v5/real-world-assets/market-pairs/list", this.idParams(id), { available: false, pairs: [] });
+    return this.ok("/v5/real-world-assets/market-pairs/list", this.idParams(id), {
+      available: false,
+      pairs: [],
+    });
   }
 
   async getKeyInfo(): Promise<CmcResult<KeyInfoResponse["data"]>> {
-    return ok(
+    return this.ok(
       "/v1/key/info",
       {},
       {
@@ -161,7 +194,8 @@ export class FixtureDataSource implements RwaDataSource {
     id: RwaIdentifier,
     pool?: T[],
   ): T[] {
-    const source = (pool ?? materializeFixtures(new Date())) as unknown as T[];
+    const source = (pool ??
+      materializeFixtures(this.now(), this.currentTick, this.scenario)) as unknown as T[];
     if (id.rwaId?.length) {
       const wanted = new Set(id.rwaId);
       return source.filter((a) => wanted.has(a.rwa_id));

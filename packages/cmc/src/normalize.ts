@@ -95,6 +95,7 @@ export function toTokenObservations(
       kind: "token",
       rwaId: asset.rwa_id,
       cryptoId: t.crypto_id,
+      tokenSymbol: t.symbol,
       price: t.price,
       currency,
       marketCap: t.market_cap ?? null,
