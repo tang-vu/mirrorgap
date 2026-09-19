@@ -2,8 +2,10 @@ import Database from "better-sqlite3";
 import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import type {
+  AlertRecord,
   AnomalyEvent,
   EvidenceReceipt,
+  EventTransition,
   IntegritySnapshot,
   Investigation,
   Issuer,
@@ -11,6 +13,7 @@ import type {
   RwaAsset,
   ScanRun,
   TokenRepresentation,
+  WatchlistEntry,
 } from "@mirrorgap/core";
 import type { CmcDiagnostic } from "@mirrorgap/cmc";
 import { MIGRATIONS } from "./schema.js";
@@ -187,6 +190,29 @@ export class SqliteStore implements MirrorGapStore {
     return rows.map((r) => JSON.parse(r.payload) as IntegritySnapshot);
   }
 
+  snapshotsFor(
+    rwaId: number,
+    opts: { since?: string; until?: string; limit?: number } = {},
+  ): IntegritySnapshot[] {
+    const limit = Math.min(opts.limit ?? 5000, 20_000);
+    const clauses = ["rwa_id=?"];
+    const args: (string | number)[] = [rwaId];
+    if (opts.since) {
+      clauses.push("measured_at>=?");
+      args.push(opts.since);
+    }
+    if (opts.until) {
+      clauses.push("measured_at<=?");
+      args.push(opts.until);
+    }
+    const rows = this.db
+      .prepare(
+        `SELECT payload FROM snapshots WHERE ${clauses.join(" AND ")} ORDER BY measured_at ASC LIMIT ?`,
+      )
+      .all(...args, limit) as { payload: string }[];
+    return rows.map((r) => JSON.parse(r.payload) as IntegritySnapshot);
+  }
+
   // ---- events -----------------------------------------------------------------------
 
   openEventFor(rwaId: number, kind: string): AnomalyEvent | null {
@@ -228,14 +254,222 @@ export class SqliteStore implements MirrorGapStore {
     return row ? (JSON.parse(row.payload) as AnomalyEvent) : null;
   }
 
-  listEvents(opts: { status?: string; limit?: number } = {}): AnomalyEvent[] {
-    const limit = opts.limit ?? 100;
-    const rows = opts.status
+  listEvents(opts: { status?: string; limit?: number; rwaId?: number } = {}): AnomalyEvent[] {
+    const limit = Math.min(opts.limit ?? 100, 1000);
+    const clauses: string[] = [];
+    const args: (string | number)[] = [];
+    if (opts.status) {
+      clauses.push("status=?");
+      args.push(opts.status);
+    }
+    if (opts.rwaId !== undefined) {
+      clauses.push("rwa_id=?");
+      args.push(opts.rwaId);
+    }
+    const where = clauses.length ? `WHERE ${clauses.join(" AND ")}` : "";
+    const rows = this.db
+      .prepare(`SELECT payload FROM events ${where} ORDER BY last_seen_at DESC LIMIT ?`)
+      .all(...args, limit) as { payload: string }[];
+    return rows.map((r) => JSON.parse(r.payload) as AnomalyEvent);
+  }
+
+  eventIdsFor(rwaId: number, kind: string): string[] {
+    const rows = this.db
+      .prepare("SELECT event_id FROM events WHERE rwa_id=? AND kind=? ORDER BY first_seen_at ASC")
+      .all(rwaId, kind) as { event_id: string }[];
+    return rows.map((r) => r.event_id);
+  }
+
+  eventCountsByStatus(): Record<string, number> {
+    const rows = this.db.prepare("SELECT status, COUNT(*) AS n FROM events GROUP BY status").all() as {
+      status: string;
+      n: number;
+    }[];
+    const out: Record<string, number> = {};
+    for (const r of rows) out[r.status] = r.n;
+    return out;
+  }
+
+  // ---- event transitions ------------------------------------------------------
+
+  insertTransition(t: EventTransition): void {
+    this.db
+      .prepare(
+        `INSERT INTO event_transitions (event_id, rwa_id, at, transition, severity, deviation_pct, snapshot_id, detail, frame)
+         VALUES (?,?,?,?,?,?,?,?,?)`,
+      )
+      .run(
+        t.eventId,
+        t.rwaId,
+        t.at,
+        t.transition,
+        t.severity,
+        t.deviationPct,
+        t.snapshotId,
+        t.detail,
+        t.frame ? JSON.stringify(t.frame) : null,
+      );
+  }
+
+  private rowToTransition(r: Record<string, unknown>): EventTransition {
+    return {
+      id: r["id"] as number,
+      eventId: r["event_id"] as string,
+      rwaId: r["rwa_id"] as number,
+      at: r["at"] as string,
+      transition: r["transition"] as EventTransition["transition"],
+      severity: r["severity"] as EventTransition["severity"],
+      deviationPct: (r["deviation_pct"] as number | null) ?? null,
+      snapshotId: (r["snapshot_id"] as string | null) ?? null,
+      detail: r["detail"] as string,
+      ...(r["frame"] ? { frame: JSON.parse(r["frame"] as string) as EventTransition["frame"] } : {}),
+    };
+  }
+
+  transitionsFor(eventId: string): EventTransition[] {
+    const rows = this.db
+      .prepare("SELECT * FROM event_transitions WHERE event_id=? ORDER BY id ASC")
+      .all(eventId) as Record<string, unknown>[];
+    return rows.map((r) => this.rowToTransition(r));
+  }
+
+  transitionsForAsset(rwaId: number, opts: { since?: string; limit?: number } = {}): EventTransition[] {
+    const limit = Math.min(opts.limit ?? 2000, 10_000);
+    const rows = opts.since
       ? this.db
-          .prepare("SELECT payload FROM events WHERE status=? ORDER BY last_seen_at DESC LIMIT ?")
-          .all(opts.status, limit)
-      : this.db.prepare("SELECT payload FROM events ORDER BY last_seen_at DESC LIMIT ?").all(limit);
-    return (rows as { payload: string }[]).map((r) => JSON.parse(r.payload) as AnomalyEvent);
+          .prepare("SELECT * FROM event_transitions WHERE rwa_id=? AND at>=? ORDER BY id ASC LIMIT ?")
+          .all(rwaId, opts.since, limit)
+      : this.db
+          .prepare("SELECT * FROM event_transitions WHERE rwa_id=? ORDER BY id ASC LIMIT ?")
+          .all(rwaId, limit);
+    return (rows as Record<string, unknown>[]).map((r) => this.rowToTransition(r));
+  }
+
+  // ---- watchlist ----------------------------------------------------------------
+
+  private rowToWatch(r: Record<string, unknown>): WatchlistEntry {
+    return {
+      rwaId: r["rwa_id"] as number,
+      symbol: r["symbol"] as string,
+      addedAt: r["added_at"] as string,
+      thresholds: r["thresholds_json"] ? JSON.parse(r["thresholds_json"] as string) : null,
+      enabled: (r["enabled"] as number) === 1,
+    };
+  }
+
+  listWatchlist(): WatchlistEntry[] {
+    const rows = this.db.prepare("SELECT * FROM watchlist ORDER BY symbol").all() as Record<
+      string,
+      unknown
+    >[];
+    return rows.map((r) => this.rowToWatch(r));
+  }
+
+  getWatchEntry(rwaId: number): WatchlistEntry | null {
+    const row = this.db.prepare("SELECT * FROM watchlist WHERE rwa_id=?").get(rwaId) as
+      Record<string, unknown> | undefined;
+    return row ? this.rowToWatch(row) : null;
+  }
+
+  upsertWatchEntry(e: WatchlistEntry): void {
+    this.db
+      .prepare(
+        `INSERT INTO watchlist (rwa_id, symbol, added_at, thresholds_json, enabled) VALUES (?,?,?,?,?)
+         ON CONFLICT(rwa_id) DO UPDATE SET symbol=excluded.symbol, thresholds_json=excluded.thresholds_json, enabled=excluded.enabled`,
+      )
+      .run(
+        e.rwaId,
+        e.symbol,
+        e.addedAt,
+        e.thresholds ? JSON.stringify(e.thresholds) : null,
+        e.enabled ? 1 : 0,
+      );
+  }
+
+  removeWatchEntry(rwaId: number): boolean {
+    return this.db.prepare("DELETE FROM watchlist WHERE rwa_id=?").run(rwaId).changes > 0;
+  }
+
+  // ---- alerts ---------------------------------------------------------------------
+
+  alertSent(eventId: string, transition: string, severity: string): boolean {
+    const row = this.db
+      .prepare(
+        "SELECT 1 FROM alert_log WHERE event_id=? AND transition=? AND severity=? AND status='sent' LIMIT 1",
+      )
+      .get(eventId, transition, severity);
+    return row !== undefined;
+  }
+
+  recordAlert(r: AlertRecord): void {
+    this.db
+      .prepare(
+        `INSERT INTO alert_log (event_id, transition, severity, destination, status, sent_at, detail)
+         VALUES (?,?,?,?,?,?,?)`,
+      )
+      .run(r.eventId, r.transition, r.severity, r.destination, r.status, r.sentAt, r.detail);
+  }
+
+  listAlerts(limit = 100): AlertRecord[] {
+    const rows = this.db
+      .prepare("SELECT * FROM alert_log ORDER BY id DESC LIMIT ?")
+      .all(Math.min(limit, 1000)) as Record<string, unknown>[];
+    return rows.map((r) => ({
+      id: r["id"] as number,
+      eventId: r["event_id"] as string,
+      transition: r["transition"] as string,
+      severity: r["severity"] as string,
+      destination: r["destination"] as string,
+      status: r["status"] as AlertRecord["status"],
+      sentAt: r["sent_at"] as string,
+      detail: (r["detail"] as string | null) ?? null,
+    }));
+  }
+
+  // ---- retention + stats -------------------------------------------------------------
+
+  pruneOlderThan(cutoffIso: string): { observations: number; snapshots: number; diagnostics: number } {
+    const tx = this.db.transaction(() => {
+      const observations = this.db
+        .prepare("DELETE FROM observations WHERE retrieved_at < ?")
+        .run(cutoffIso).changes;
+      // Keep snapshots referenced by events (latestSnapshotId) so incident
+      // detail stays intact; prune the rest older than the cutoff.
+      const snapshots = this.db
+        .prepare(
+          `DELETE FROM snapshots WHERE measured_at < ? AND snapshot_id NOT IN
+             (SELECT json_extract(payload, '$.latestSnapshotId') FROM events)`,
+        )
+        .run(cutoffIso).changes;
+      const diagnostics = this.db.prepare("DELETE FROM diagnostics WHERE at < ?").run(cutoffIso).changes;
+      return { observations, snapshots, diagnostics };
+    });
+    return tx();
+  }
+
+  stats(): {
+    assets: number;
+    snapshots: number;
+    events: number;
+    transitions: number;
+    dbBytes: number | null;
+  } {
+    const one = (sql: string) => (this.db.prepare(sql).get() as { n: number }).n;
+    let dbBytes: number | null = null;
+    try {
+      const pageCount = (this.db.pragma("page_count", { simple: true }) as number) ?? 0;
+      const pageSize = (this.db.pragma("page_size", { simple: true }) as number) ?? 0;
+      dbBytes = pageCount * pageSize;
+    } catch {
+      dbBytes = null;
+    }
+    return {
+      assets: one("SELECT COUNT(*) AS n FROM assets"),
+      snapshots: one("SELECT COUNT(*) AS n FROM snapshots"),
+      events: one("SELECT COUNT(*) AS n FROM events"),
+      transitions: one("SELECT COUNT(*) AS n FROM event_transitions"),
+      dbBytes,
+    };
   }
 
   // ---- investigations / receipts ------------------------------------------------------

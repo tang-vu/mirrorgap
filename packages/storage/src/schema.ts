@@ -102,4 +102,53 @@ export const MIGRATIONS: { version: number; name: string; sql: string }[] = [
       );
     `,
   },
+  {
+    version: 2,
+    name: "history_watchlist_alerts",
+    sql: `
+      -- Every lifecycle change + confirming observation for an anomaly event.
+      -- This is the raw material of the incident timeline/replay.
+      CREATE TABLE IF NOT EXISTS event_transitions (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        event_id TEXT NOT NULL,
+        rwa_id INTEGER NOT NULL,
+        at TEXT NOT NULL,
+        transition TEXT NOT NULL,
+        severity TEXT NOT NULL,
+        deviation_pct REAL,
+        snapshot_id TEXT,
+        detail TEXT NOT NULL,
+        frame TEXT
+      );
+      CREATE INDEX IF NOT EXISTS idx_trans_event ON event_transitions(event_id, id);
+      CREATE INDEX IF NOT EXISTS idx_trans_rwa ON event_transitions(rwa_id, at);
+
+      -- Persisted watchlist: watched assets + optional per-asset thresholds.
+      CREATE TABLE IF NOT EXISTS watchlist (
+        rwa_id INTEGER PRIMARY KEY,
+        symbol TEXT NOT NULL,
+        added_at TEXT NOT NULL,
+        thresholds_json TEXT,
+        enabled INTEGER NOT NULL DEFAULT 1
+      );
+
+      -- Alert delivery log: dedup (event_id+transition+severity) + audit trail.
+      CREATE TABLE IF NOT EXISTS alert_log (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        event_id TEXT NOT NULL,
+        transition TEXT NOT NULL,
+        severity TEXT NOT NULL,
+        destination TEXT NOT NULL,
+        status TEXT NOT NULL,
+        sent_at TEXT NOT NULL,
+        detail TEXT
+      );
+      CREATE INDEX IF NOT EXISTS idx_alert_dedup ON alert_log(event_id, transition, severity);
+      CREATE INDEX IF NOT EXISTS idx_alert_at ON alert_log(sent_at);
+
+      -- History hot paths.
+      CREATE INDEX IF NOT EXISTS idx_snap_rwa_time ON snapshots(rwa_id, measured_at);
+      CREATE INDEX IF NOT EXISTS idx_diag_at ON diagnostics(at);
+    `,
+  },
 ];

@@ -55,6 +55,7 @@ export const TokenObservationSchema = z.object({
   kind: z.literal("token"),
   rwaId: z.number().int().positive(),
   cryptoId: z.number().int().positive(),
+  tokenSymbol: z.string().min(1),
   price: z.number().positive(),
   marketCap: z.number().nonnegative().nullable(),
   volume24h: z.number().nonnegative().nullable(),

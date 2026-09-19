@@ -4,12 +4,16 @@ import { SqliteStore } from "@mirrorgap/storage";
 import { MirrorGapRuntime, type RuntimeDeps } from "./runtime.js";
 import { loadDotEnv } from "./dotenv.js";
 import { RuntimeBus } from "./events.js";
+import { createPrivateKey, createPublicKey } from "node:crypto";
 
 export interface RuntimeInstance {
   runtime: MirrorGapRuntime;
   config: MirrorGapConfig;
   bus: RuntimeBus;
   diagnostics: InMemoryDiagnostics;
+  /** Ed25519 public key (base64 spki) when receipt signing is configured. */
+  publicKey: string | null;
+  signingConfigured: boolean;
   close(): void;
 }
 
@@ -36,6 +40,7 @@ export function createRuntime(
     apiKey: opts.apiKey ?? opts.env?.CMC_API_KEY ?? process.env.CMC_API_KEY ?? null,
     diagnostics,
     cache: new TtlCache(),
+    fixtureScenario: opts.env?.MIRRORGAP_FIXTURE_SCENARIO ?? config.fixtureScenario,
   });
   const store = new SqliteStore(opts.dbPath ?? config.dbPath);
   const bus = new RuntimeBus();
@@ -47,11 +52,24 @@ export function createRuntime(
     signingKey:
       opts.signingKey ?? opts.env?.MIRRORGAP_SIGNING_KEY ?? process.env.MIRRORGAP_SIGNING_KEY ?? undefined,
   };
+  const publicKey = deps.signingKey
+    ? createPublicKey(
+        createPrivateKey({
+          key: Buffer.from(deps.signingKey, "base64"),
+          format: "der",
+          type: "pkcs8",
+        }),
+      )
+        .export({ type: "spki", format: "der" })
+        .toString("base64")
+    : null;
   return {
     runtime: new MirrorGapRuntime(deps),
     config,
     bus,
     diagnostics,
+    publicKey,
+    signingConfigured: publicKey !== null,
     close: () => store.close(),
   };
 }

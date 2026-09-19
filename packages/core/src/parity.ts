@@ -26,7 +26,7 @@ export function measureGap(token: TokenObservation, reference: ReferenceObservat
 
   return {
     cryptoId: token.cryptoId,
-    tokenSymbol: token.observationId.split(":").pop() ?? String(token.cryptoId),
+    tokenSymbol: token.tokenSymbol,
     tokenPrice: token.price,
     referencePrice: reference.price,
     currency: token.currency,

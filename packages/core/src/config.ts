@@ -23,6 +23,20 @@ export const MirrorGapConfigSchema = z.object({
   freshSeconds: z.number().positive(),
   agingSeconds: z.number().positive(),
   scanToken: z.string().nullable(),
+  /** Days of telemetry (observations/snapshots/diagnostics) to retain. 0 = keep forever. */
+  retentionDays: z.number().nonnegative(),
+  /** Public base URL used in alert payloads + capsule permalinks. */
+  publicUrl: z.string().nullable(),
+  /** Fixture scenario id — deterministic scripted data for demos. */
+  fixtureScenario: z.string(),
+  alerts: z.object({
+    webhookUrl: z.string().nullable(),
+    discordWebhookUrl: z.string().nullable(),
+    telegramBotToken: z.string().nullable(),
+    telegramChatId: z.string().nullable(),
+    /** Minimum severity that triggers an alert. */
+    minSeverity: z.string(),
+  }),
   llm: z.object({
     apiKey: z.string().nullable(),
     baseUrl: z.string(),
@@ -83,6 +97,16 @@ export function loadConfig(
     freshSeconds: num(env.MIRRORGAP_FRESH_SECONDS, 120),
     agingSeconds: num(env.MIRRORGAP_AGING_SECONDS, 600),
     scanToken: env.MIRRORGAP_SCAN_TOKEN?.trim() || null,
+    retentionDays: num(env.MIRRORGAP_RETENTION_DAYS, 30),
+    publicUrl: env.MIRRORGAP_PUBLIC_URL?.trim().replace(/\/$/, "") || null,
+    fixtureScenario: env.MIRRORGAP_FIXTURE_SCENARIO?.trim() || "incident_cycle",
+    alerts: {
+      webhookUrl: env.MIRRORGAP_ALERT_WEBHOOK_URL?.trim() || null,
+      discordWebhookUrl: env.MIRRORGAP_DISCORD_WEBHOOK_URL?.trim() || null,
+      telegramBotToken: env.MIRRORGAP_TELEGRAM_BOT_TOKEN?.trim() || null,
+      telegramChatId: env.MIRRORGAP_TELEGRAM_CHAT_ID?.trim() || null,
+      minSeverity: env.MIRRORGAP_ALERT_MIN_SEVERITY?.trim() || "high",
+    },
     llm: {
       apiKey: env.LLM_API_KEY?.trim() || null,
       baseUrl: env.LLM_BASE_URL?.trim() || "https://api.openai.com/v1",

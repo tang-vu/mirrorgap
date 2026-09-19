@@ -1,18 +1,36 @@
 import type {
+  AlertRecord,
   AnomalyEvent,
+  EvidenceCapsule,
   EvidenceReceipt,
+  EventTransition,
+  HistoryPoint,
+  HistoryStats,
+  HistoryWindow,
+  IncidentStats,
   IntegritySnapshot,
   Investigation,
   MirrorGapConfig,
   RwaAsset,
   ScanRun,
+  Thresholds,
+  TimelineEntry,
+  WatchlistEntry,
 } from "@mirrorgap/core";
 import {
   applyScanToEvent,
+  buildCapsule,
+  buildIncidentTimeline,
   buildInvestigation,
   buildReceipt,
+  downsamplePoints,
   evaluateAsset,
+  historyStats,
+  incidentStats,
+  signReceipt,
+  snapshotToPoint,
   verifyReceipt,
+  windowToMs,
   type VerifyResult,
 } from "@mirrorgap/core";
 import {
@@ -25,10 +43,10 @@ import {
   type RwaQuotesEntry,
 } from "@mirrorgap/cmc";
 import type { MirrorGapStore } from "@mirrorgap/storage";
-import { signReceipt } from "@mirrorgap/core";
 import { RuntimeBus } from "./events.js";
 import { explainDeterministic, explainWithOptionalLlm, type Explanation } from "./explain.js";
-import type { Provenance } from "@mirrorgap/core";
+import { AlertDispatcher, type AlertTransition } from "./alerts.js";
+import type { Provenance, Severity } from "@mirrorgap/core";
 
 export interface RuntimeDeps {
   config: MirrorGapConfig;
@@ -36,6 +54,7 @@ export interface RuntimeDeps {
   store: MirrorGapStore;
   bus?: RuntimeBus;
   signingKey?: string | undefined;
+  alerts?: AlertDispatcher;
 }
 
 export interface ScanOutcome {
@@ -51,18 +70,27 @@ export interface EventDetail {
   investigation: Investigation | null;
   receipt: EvidenceReceipt | null;
   verification: VerifyResult | null;
+  timeline?: TimelineEntry[];
+  stats?: IncidentStats;
   explanation?: Explanation;
 }
 
+const SEV_RANK: Record<string, number> = { none: 0, info: 1, watch: 2, high: 3, critical: 4 };
+
 /**
  * The scan pipeline: CMC source → domain observations → deterministic engine
- * → persistence → event lifecycle → investigation + receipt for confirmed
- * anomalies. One code path used by HTTP, CLI, MCP and the scheduler.
+ * → persistence → event lifecycle (with transition records) → investigation
+ * + receipt for confirmed anomalies → lifecycle-aware alerts.
+ * One code path used by HTTP, CLI, MCP and the scheduler.
  */
 export class MirrorGapRuntime {
   readonly bus: RuntimeBus;
+  readonly alerts: AlertDispatcher;
   constructor(private deps: RuntimeDeps) {
     this.bus = deps.bus ?? new RuntimeBus();
+    this.alerts =
+      deps.alerts ??
+      new AlertDispatcher(deps.store, deps.config.alerts, { publicUrl: deps.config.publicUrl });
   }
 
   get store() {
@@ -79,7 +107,12 @@ export class MirrorGapRuntime {
     return this.deps.config;
   }
 
-  /** Resolve the watchlist: explicit symbols, else top ranked map entries with tokens. */
+  /**
+   * Resolve the watchlist. Priority:
+   *   1. explicit symbols (ad-hoc scan)
+   *   2. persisted watchlist (enabled entries)
+   *   3. fallback: top-ranked map entries with tokens (bounded by watchLimit)
+   */
   async resolveWatchlist(symbols?: string[]): Promise<RwaAsset[]> {
     if (symbols && symbols.length > 0) {
       const out: RwaAsset[] = [];
@@ -88,6 +121,15 @@ export class MirrorGapRuntime {
         for (const e of found.data ?? []) out.push(toRwaAsset(e));
       }
       return out;
+    }
+    const watched = this.store.listWatchlist().filter((w) => w.enabled);
+    if (watched.length > 0) {
+      const bySymbol = new Map(watched.map((w) => [w.symbol.toUpperCase(), w]));
+      const found = await this.source.listRwaMap({ symbol: [...bySymbol.keys()] });
+      const assets = (found.data ?? []).map(toRwaAsset);
+      // Keep entries whose symbol resolved; unresolved entries stay in the
+      // watchlist (they may resolve later) but are skipped this scan.
+      return assets.slice(0, this.config.watchLimit);
     }
     const map = await this.source.listRwaMap({ limit: 250 });
     const entries = (map.data ?? []).filter((e) => e.has_tokens);
@@ -98,12 +140,58 @@ export class MirrorGapRuntime {
     return ranked.map(toRwaAsset);
   }
 
+  /** Watchlist management — returns the entry or throws on unknown asset. */
+  async addToWatchlist(input: { symbol?: string; rwaId?: number; thresholds?: Thresholds | null }) {
+    const existing = this.store.listWatchlist();
+    if (input.rwaId === undefined && !input.symbol) {
+      throw new Error("watchlist add requires a symbol or rwaId");
+    }
+    let asset: RwaAsset | null = null;
+    if (input.rwaId !== undefined) {
+      asset = this.store.getAsset(input.rwaId);
+      if (!asset) {
+        const found = await this.source.listRwaMap({ limit: 250 });
+        const e = (found.data ?? []).find((x) => x.rwa_id === input.rwaId);
+        if (e) asset = toRwaAsset(e);
+      }
+    } else {
+      const found = await this.source.listRwaMap({ symbol: [input.symbol!.toUpperCase()] });
+      const e = (found.data ?? [])[0];
+      if (e) asset = toRwaAsset(e);
+      if (!asset) asset = this.store.findAssetBySymbol(input.symbol!);
+    }
+    if (!asset) throw new Error(`unknown asset: ${input.symbol ?? input.rwaId}`);
+    const already = existing.find((w) => w.rwaId === asset!.rwaId);
+    if (!already && existing.length >= this.config.watchLimit) {
+      throw new Error(`watchlist full (${this.config.watchLimit} max) — remove an asset first`);
+    }
+    const entry: WatchlistEntry = {
+      rwaId: asset.rwaId,
+      symbol: asset.symbol,
+      addedAt: already?.addedAt ?? new Date().toISOString(),
+      thresholds: input.thresholds ?? already?.thresholds ?? null,
+      enabled: true,
+    };
+    this.store.upsertWatchEntry(entry);
+    this.store.upsertAsset(asset);
+    return entry;
+  }
+
+  removeFromWatchlist(rwaId: number): boolean {
+    return this.store.removeWatchEntry(rwaId);
+  }
+
+  listWatchlist(): WatchlistEntry[] {
+    return this.store.listWatchlist();
+  }
+
   /** Run one scan across the watchlist (or a symbol subset). */
-  async scan(opts: { symbols?: string[]; label?: string } = {}): Promise<ScanOutcome> {
+  async scan(opts: { symbols?: string[]; label?: string; now?: Date } = {}): Promise<ScanOutcome> {
     const scanId = `scan_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+    const scanNow = opts.now ?? new Date();
     const scan: ScanRun = {
       scanId,
-      startedAt: new Date().toISOString(),
+      startedAt: scanNow.toISOString(),
       completedAt: null,
       dataMode: this.source.mode,
       assetsScanned: 0,
@@ -116,9 +204,13 @@ export class MirrorGapRuntime {
 
     const snapshots: IntegritySnapshot[] = [];
     const events: AnomalyEvent[] = [];
+    const alertJobs: Promise<void>[] = [];
     try {
       const watchlist = await this.resolveWatchlist(opts.symbols);
       const ids = watchlist.map((a) => a.rwaId);
+      // Scripted fixtures advance one tick per scan and pin their clock to
+      // the scan's `now` — live sources do not implement advance().
+      this.source.advance?.(scanNow);
       const quotesResult = await this.source.getRwaQuotes({ rwaId: ids }, "USD");
       const entries = quotesResult.data ?? [];
 
@@ -138,22 +230,42 @@ export class MirrorGapRuntime {
             ? false
             : null;
 
-      const now = new Date();
+      const thresholdOverrides = new Map<number, Thresholds>();
+      for (const w of this.store.listWatchlist()) {
+        if (w.thresholds) thresholdOverrides.set(w.rwaId, w.thresholds);
+      }
+
       for (const entry of entries) {
         const outcome = this.processEntry(
           entry,
           infoMap.get(entry.rwa_id),
           scanId,
           marketPairsAvailable,
-          now,
+          scanNow,
           quotesResult.provenance,
+          thresholdOverrides.get(entry.rwa_id),
+          alertJobs,
         );
         if (!outcome) continue;
         snapshots.push(outcome.snapshot);
-        this.bus.publish({ type: "snapshot", snapshot: outcome.snapshot, assetSymbol: outcome.asset.symbol });
+        this.bus.publish({
+          type: "snapshot",
+          snapshot: outcome.snapshot,
+          assetSymbol: outcome.asset.symbol,
+        });
         if (outcome.event) {
           events.push(outcome.event);
           this.bus.publish({ type: "event", event: outcome.event, assetSymbol: outcome.asset.symbol });
+        }
+      }
+
+      // Retention: prune telemetry older than the configured window.
+      if (this.config.retentionDays > 0) {
+        try {
+          const cutoff = new Date(scanNow.getTime() - this.config.retentionDays * 86_400_000);
+          this.store.pruneOlderThan(cutoff.toISOString());
+        } catch {
+          // retention is housekeeping — never break a scan over it
         }
       }
 
@@ -170,6 +282,11 @@ export class MirrorGapRuntime {
         anomaliesFound: done.anomaliesFound,
       });
       this.bus.publish({ type: "scan_finished", scan: done });
+
+      // Alerts are best-effort — awaited so callers (tests, CLI) see settled
+      // delivery, but every failure is already swallowed inside notify().
+      await Promise.allSettled(alertJobs);
+
       return { scan: done, snapshots, events };
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
@@ -186,11 +303,12 @@ export class MirrorGapRuntime {
         completedAt: new Date().toISOString(),
       };
       this.bus.publish({ type: "scan_finished", scan: failed });
+      await Promise.allSettled(alertJobs);
       throw err;
     }
   }
 
-  /** Normalize one quotes entry → evaluate → persist → lifecycle → receipt. */
+  /** Normalize one quotes entry → evaluate → persist → lifecycle → receipt → alert. */
   private processEntry(
     entry: RwaQuotesEntry,
     infoAsset: RwaAsset | undefined,
@@ -198,6 +316,8 @@ export class MirrorGapRuntime {
     marketPairsAvailable: boolean | null,
     now: Date,
     provenance: Provenance,
+    thresholdOverride: Thresholds | undefined,
+    alertJobs: Promise<void>[],
   ): { asset: RwaAsset; snapshot: IntegritySnapshot; event: AnomalyEvent | null } | null {
     const asset: RwaAsset = { ...toRwaAsset(entry), primaryExchange: infoAsset?.primaryExchange ?? null };
     const reps = toRepresentations(entry);
@@ -213,6 +333,7 @@ export class MirrorGapRuntime {
     const existing =
       this.store.openEventFor(asset.rwaId, "parity_gap") ??
       this.store.openEventFor(asset.rwaId, "cross_wrapper_dispersion");
+    const prevSeverity: Severity | null = existing?.severity ?? null;
     const snapshotId = `snap:${scanId}:${asset.rwaId}`;
 
     const { snapshot, anomaly } = evaluateAsset({
@@ -221,7 +342,7 @@ export class MirrorGapRuntime {
       asset,
       reference,
       tokens,
-      thresholds: this.config.thresholds,
+      thresholds: thresholdOverride ?? this.config.thresholds,
       freshness: { freshSeconds: this.config.freshSeconds, agingSeconds: this.config.agingSeconds },
       marketPairsAvailable,
       priorConfirmations: existing?.confirmations ?? 0,
@@ -243,6 +364,30 @@ export class MirrorGapRuntime {
 
     const event = lifecycle.event;
     this.store.upsertEvent(event);
+    this.recordTransition(event, lifecycle.transition, anomaly?.deviationPct ?? null, snapshot, now, {
+      prevSeverity,
+      confirmations: event.confirmations,
+      kind: event.kind,
+    });
+
+    // Lifecycle-aware alerts (deduplicated inside the dispatcher).
+    const alertTransition: AlertTransition | null =
+      lifecycle.transition === "created"
+        ? "created"
+        : lifecycle.transition === "confirmed"
+          ? "confirmed"
+          : lifecycle.transition === "resolved"
+            ? "resolved"
+            : lifecycle.transition === "invalidated"
+              ? "invalidated"
+              : lifecycle.transition === "updated" &&
+                  prevSeverity !== null &&
+                  (SEV_RANK[event.severity] ?? 0) > (SEV_RANK[prevSeverity] ?? 0)
+                ? "severity_escalated"
+                : null;
+    if (alertTransition) {
+      alertJobs.push(this.alerts.notify(alertTransition, event, snapshot));
+    }
 
     // Confirmed anomalies earn a full investigation + signed-capable receipt.
     if (lifecycle.transition === "confirmed") {
@@ -271,11 +416,55 @@ export class MirrorGapRuntime {
         now,
       });
       const signed = this.deps.signingKey
-        ? { ...receipt, signature: signWithKey(receipt, this.deps.signingKey) }
+        ? { ...receipt, signature: signReceipt(receipt, this.deps.signingKey) }
         : receipt;
       this.store.insertReceipt(signed);
     }
     return { asset, snapshot, event };
+  }
+
+  /** Persist one transition row — the raw material of incident timelines. */
+  private recordTransition(
+    event: AnomalyEvent,
+    transition: "created" | "confirmed" | "resolved" | "invalidated" | "updated" | "none",
+    deviationPct: number | null,
+    snapshot: IntegritySnapshot,
+    now: Date,
+    ctx: { prevSeverity: Severity | null; confirmations: number; kind: string },
+  ): void {
+    if (transition === "none") return;
+    const kind = ctx.kind === "parity_gap" ? "parity gap vs tokenized aggregate" : "cross-wrapper dispersion";
+    const detail =
+      transition === "created"
+        ? `${event.assetSymbol}: ${kind} first measured at ${deviationPct?.toFixed(2)}% (${event.severity}) — candidate opened.`
+        : transition === "confirmed"
+          ? `${event.assetSymbol}: anomaly confirmed after ${ctx.confirmations} confirmation(s) at ${deviationPct?.toFixed(2)}% — severity ${event.severity}, classification ${event.classification}.`
+          : transition === "resolved"
+            ? `${event.assetSymbol}: deviation returned inside configured thresholds — incident resolved.`
+            : transition === "invalidated"
+              ? `${event.assetSymbol}: reference became ${snapshot.reference.state} — comparison no longer possible, incident invalidated.`
+              : `${event.assetSymbol}: deviation now ${deviationPct?.toFixed(2)}% (${event.severity}).`;
+    const maxAbsGap = snapshot.gaps.reduce((m, g) => Math.max(m, Math.abs(g.gapPct)), 0);
+    const t: EventTransition = {
+      eventId: event.eventId,
+      rwaId: event.rwaId,
+      at: now.toISOString(),
+      transition,
+      severity: event.severity,
+      deviationPct,
+      snapshotId: snapshot.snapshotId,
+      detail,
+      frame: {
+        referenceState: snapshot.reference.state,
+        underlyingMarket: snapshot.reference.underlyingMarket,
+        aggregateFreshness: snapshot.reference.aggregateFreshness.state,
+        dispersionPct: snapshot.dispersion.dispersionPct,
+        maxAbsGapPct: snapshot.gaps.length ? maxAbsGap : null,
+        dataQuality: snapshot.dataQuality.score,
+        gaps: snapshot.gaps.map((g) => ({ tokenSymbol: g.tokenSymbol, gapPct: g.gapPct })),
+      },
+    };
+    this.store.insertTransition(t);
   }
 
   /** Radar summary: latest snapshot per watched asset. */
@@ -287,12 +476,101 @@ export class MirrorGapRuntime {
       .sort((a, b) => Math.abs(maxGap(b.snapshot)) - Math.abs(maxGap(a.snapshot)));
   }
 
+  /** History series for one asset. Bounded + deterministically downsampled. */
+  assetHistory(
+    rwaId: number,
+    opts: { window?: HistoryWindow; maxPoints?: number } = {},
+  ): { window: HistoryWindow; points: HistoryPoint[]; stats: HistoryStats } {
+    const window = opts.window ?? "24h";
+    const ms = windowToMs(window);
+    const since = ms === null ? undefined : new Date(Date.now() - ms).toISOString();
+    const snaps = this.store.snapshotsFor(rwaId, {
+      ...(since ? { since } : {}),
+      limit: 20_000,
+    });
+    const points = snaps.map(snapshotToPoint);
+    const stats = historyStats(points);
+    return { window, points: downsamplePoints(points, opts.maxPoints ?? 720), stats };
+  }
+
+  /** Incident timeline: event + transitions → narrative entries. */
+  eventTimeline(eventId: string): { event: AnomalyEvent; entries: TimelineEntry[] } | null {
+    const event = this.store.getEvent(eventId);
+    if (!event) return null;
+    const transitions = this.store.transitionsFor(eventId);
+    const receipt = this.store.receiptForEvent(eventId);
+    const entries = buildIncidentTimeline(event, transitions, {
+      receiptIssuedAt: receipt?.generatedAt ?? null,
+    });
+    return { event, entries };
+  }
+
+  /** All transitions for one event (raw records). */
+  eventTransitions(eventId: string): EventTransition[] {
+    return this.store.transitionsFor(eventId);
+  }
+
+  /** Public Evidence Capsule: receipt + human context + verification. */
+  evidenceCapsule(eventId: string): EvidenceCapsule | null {
+    const event = this.store.getEvent(eventId);
+    if (!event) return null;
+    const receipt = this.store.receiptForEvent(eventId);
+    if (!receipt) return null;
+    const verification = verifyReceipt(receipt);
+    const siblings = this.store.eventIdsFor(event.rwaId, event.kind);
+    const stats = incidentStats(event, this.store.transitionsFor(eventId), siblings);
+    return buildCapsule({ event, receipt, verification, stats });
+  }
+
+  /** Observatory overview stats for the first screen. */
+  overview(): {
+    dataMode: "live" | "fixture";
+    assetsWatched: number;
+    assetsAnomalous: number;
+    activeIncidents: number;
+    confirmedIncidents: number;
+    criticalOrHigh: number;
+    watchlistSize: number;
+    latestScan: ScanRun | null;
+    eventCounts: Record<string, number>;
+    storage: { snapshots: number; transitions: number; dbBytes: number | null };
+    capabilities: Record<string, string>;
+    alertsConfigured: boolean;
+    signingConfigured: boolean;
+  } {
+    const counts = this.store.eventCountsByStatus();
+    const events = this.store.listEvents({ limit: 1000 });
+    const active = events.filter((e) => e.status === "candidate" || e.status === "confirmed");
+    const radar = this.radar();
+    return {
+      dataMode: this.config.dataMode,
+      assetsWatched: radar.length,
+      assetsAnomalous: radar.filter((r) => r.snapshot.severity !== "none").length,
+      activeIncidents: active.length,
+      confirmedIncidents: active.filter((e) => e.status === "confirmed").length,
+      criticalOrHigh: active.filter((e) => (SEV_RANK[e.severity] ?? 0) >= (SEV_RANK["high"] ?? 3)).length,
+      watchlistSize: this.store.listWatchlist().filter((w) => w.enabled).length,
+      latestScan: this.store.latestScan(),
+      eventCounts: counts,
+      storage: this.store.stats(),
+      capabilities: this.capabilities(),
+      alertsConfigured: this.alerts.configured,
+      signingConfigured: Boolean(this.deps.signingKey),
+    };
+  }
+
+  listAlertLog(limit = 50): AlertRecord[] {
+    return this.store.listAlerts(limit);
+  }
+
   getEventDetail(eventId: string): EventDetail | null {
     const event = this.store.getEvent(eventId);
     if (!event) return null;
     const snapshot = this.store.getSnapshot(event.latestSnapshotId);
     const investigation = this.store.latestInvestigationFor(eventId);
     const receipt = this.store.receiptForEvent(eventId);
+    const tl = this.eventTimeline(eventId);
+    const siblings = this.store.eventIdsFor(event.rwaId, event.kind);
     return {
       event,
       asset: this.store.getAsset(event.rwaId),
@@ -300,6 +578,8 @@ export class MirrorGapRuntime {
       investigation,
       receipt,
       verification: receipt ? verifyReceipt(receipt) : null,
+      timeline: tl?.entries ?? [],
+      stats: incidentStats(event, this.store.transitionsFor(eventId), siblings),
     };
   }
 
@@ -317,7 +597,7 @@ export class MirrorGapRuntime {
     return explainWithOptionalLlm(base, this.deps.config.llm);
   }
 
-  listEvents(opts: { status?: string; limit?: number } = {}): AnomalyEvent[] {
+  listEvents(opts: { status?: string; limit?: number; rwaId?: number } = {}): AnomalyEvent[] {
     return this.store.listEvents(opts);
   }
 
@@ -329,8 +609,4 @@ export class MirrorGapRuntime {
 
 function maxGap(s: IntegritySnapshot): number {
   return s.gaps.reduce((m, g) => Math.max(m, Math.abs(g.gapPct)), 0);
-}
-
-function signWithKey(receipt: EvidenceReceipt, privateKey: string) {
-  return signReceipt(receipt, privateKey);
 }

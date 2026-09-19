@@ -44,6 +44,7 @@ export function tokObs(
     kind: "token",
     rwaId: 2,
     cryptoId,
+    tokenSymbol: symbol,
     price,
     currency: "USD",
     marketCap: 39_000_000,
