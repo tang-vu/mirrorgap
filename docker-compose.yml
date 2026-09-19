@@ -1,0 +1,40 @@
+services:
+  mirrorgap:
+    build: .
+    image: mirrorgap:latest
+    ports:
+      - "8787:8787"
+    environment:
+      # fixture demo (default) — deterministic synthetic data
+      MIRRORGAP_DATA_MODE: ${MIRRORGAP_DATA_MODE:-fixture}
+      MIRRORGAP_SEED_TICKS: ${MIRRORGAP_SEED_TICKS:-31}
+      MIRRORGAP_SCAN_INTERVAL: ${MIRRORGAP_SCAN_INTERVAL:-60}
+      # live mode — set these in your shell or a local .env (never commit keys)
+      CMC_API_KEY: ${CMC_API_KEY:-}
+      MIRRORGAP_SCAN_TOKEN: ${MIRRORGAP_SCAN_TOKEN:-}
+      MIRRORGAP_SIGNING_KEY: ${MIRRORGAP_SIGNING_KEY:-}
+      MIRRORGAP_PUBLIC_URL: ${MIRRORGAP_PUBLIC_URL:-}
+      # alerts (optional)
+      MIRRORGAP_ALERT_WEBHOOK_URL: ${MIRRORGAP_ALERT_WEBHOOK_URL:-}
+      MIRRORGAP_DISCORD_WEBHOOK_URL: ${MIRRORGAP_DISCORD_WEBHOOK_URL:-}
+      MIRRORGAP_TELEGRAM_BOT_TOKEN: ${MIRRORGAP_TELEGRAM_BOT_TOKEN:-}
+      MIRRORGAP_TELEGRAM_CHAT_ID: ${MIRRORGAP_TELEGRAM_CHAT_ID:-}
+      MIRRORGAP_ALERT_MIN_SEVERITY: ${MIRRORGAP_ALERT_MIN_SEVERITY:-high}
+    volumes:
+      - mirrorgap-data:/data
+    restart: unless-stopped
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:8787/api/v1/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
+        ]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+volumes:
+  mirrorgap-data:

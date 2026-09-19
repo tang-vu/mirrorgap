@@ -18,9 +18,30 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - name: approve dependency builds
         run: pnpm approve-builds --all || true
+      - run: pnpm format:check
       - run: pnpm typecheck
       - run: pnpm test
       - run: pnpm demo:check
+      # Headless-browser smoke — uses the runner's Chrome when present,
+      # otherwise the script reports "skipped" and exits 0.
+      - name: e2e smoke (browser if available)
+        run: pnpm e2e
+        env:
+          PUPPETEER_EXECUTABLE_PATH: /usr/bin/google-chrome
       - name: secret scan (tracked files)
         run: |
           ! git grep -nE '(X-CMC_PRO_API_KEY|api_key|apikey|secret|bearer)[[:space:]]*[:=][[:space:]]*["'"'"']?[A-Za-z0-9]{20,}' -- ':!*.md' ':!.env.example'
+
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: build image
+        run: docker build -t mirrorgap:ci .
+      - name: smoke fixture container
+        run: |
+          docker run -d --name mg -p 8787:8787 mirrorgap:ci
+          for i in $(seq 1 45); do
+            curl -sf http://127.0.0.1:8787/api/v1/healthz && exit 0 || sleep 2
+          done
+          exit 1

@@ -5,7 +5,11 @@
  * verifies a receipt, prints PASS/FAIL. Used in CI and before recording.
  */
 import { spawn } from "node:child_process";
+import { fileURLToPath } from "node:url";
 
+// Spawn the server directly (not via pnpm) so child.kill() reaches the actual
+// node process — on Windows a pnpm/cmd wrapper leaves the server orphaned.
+const WEB_DIR = fileURLToPath(new URL("../apps/web", import.meta.url));
 const PORT = 8791;
 const base = `http://127.0.0.1:${PORT}`;
 const env = {
@@ -31,10 +35,10 @@ const check = (name, ok, detail = "") => {
 };
 
 try {
-  child = spawn("pnpm", ["--filter", "@mirrorgap/web", "dev"], {
+  child = spawn(process.execPath, ["--import", "tsx", "src/server.ts"], {
     env,
+    cwd: WEB_DIR,
     stdio: "pipe",
-    shell: process.platform === "win32",
   });
   let ready = false;
   for (let i = 0; i < 60 && !ready; i++) {

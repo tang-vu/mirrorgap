@@ -19,10 +19,13 @@
     "format:check": "prettier --check .",
     "mirrorgap": "pnpm -F @mirrorgap/cli mirrorgap",
     "mcp": "pnpm -F @mirrorgap/mcp start",
-    "demo:check": "node scripts/demo-check.mjs"
+    "demo:check": "node scripts/demo-check.mjs",
+    "bench": "node scripts/benchmark.mjs",
+    "e2e": "node scripts/e2e-smoke.mjs"
   },
   "devDependencies": {
-    "prettier": "^3.6.2"
+    "prettier": "^3.6.2",
+    "puppeteer-core": "^24.43.1"
   },
   "pnpm": {
     "onlyBuiltDependencies": [
