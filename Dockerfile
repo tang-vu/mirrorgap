@@ -59,7 +59,11 @@ ENV MIRRORGAP_DB_PATH=/data/mirrorgap.db \
 HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
   CMD node -e "fetch('http://127.0.0.1:'+(process.env.PORT||8787)+'/api/v1/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
 
+# Workdir must be the app dir: pnpm's non-hoisted layout keeps `tsx` under
+# apps/web/node_modules, so `--import tsx` only resolves from there.
+WORKDIR /app/apps/web
+
 # default: web observatory. The CLI is available as:
-#   docker run --rm -v mirrorgap-data:/data --entrypoint node mirrorgap \
-#     --import tsx apps/cli/src/main.ts radar
-CMD ["node", "--import", "tsx", "apps/web/src/server.ts"]
+#   docker run --rm -v mirrorgap-data:/data -w /app/apps/cli \
+#     --entrypoint node mirrorgap --import tsx src/main.ts radar
+CMD ["node", "--import", "tsx", "src/server.ts"]

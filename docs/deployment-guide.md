@@ -22,10 +22,11 @@ The image is a two-stage build (`node:22-slim`):
 - **deps**: `pnpm install --frozen-lockfile --prod` — workspace prod deps only
 - **runtime**: non-root user (`mirrorgap`, uid 10001), `/data` volume for
   SQLite, `HEALTHCHECK` against `/api/v1/healthz`, `EXPOSE 8787`
-- **command**: `node --import tsx apps/web/src/server.ts` — workspace packages
-  export `src/*.ts` directly (by design: zero build step, single source of
-  truth), so the production runtime is `tsx`, the same loader used in dev and
-  CI. There is intentionally no compiled `dist/` to run.
+- **command**: `node --import tsx src/server.ts` from `/app/apps/web` —
+  workspace packages export `src/*.ts` directly (by design: zero build step,
+  single source of truth), so the production runtime is `tsx`. The workdir
+  matters: pnpm's non-hoisted layout keeps `tsx` under the app's own
+  `node_modules`, so `--import tsx` only resolves from there.
 
 Compose defaults: fixture mode, 31 seed ticks, 60 s scan interval, persistent
 `mirrorgap-data` volume. Override via env:
@@ -34,11 +35,12 @@ Compose defaults: fixture mode, 31 seed ticks, 60 s scan interval, persistent
 MIRRORGAP_DATA_MODE=live CMC_API_KEY=… docker compose up -d
 ```
 
-CLI inside the container:
+CLI inside the container (the image's default workdir is `apps/web`; the
+CLI lives in `apps/cli`, so override `-w`):
 
 ```bash
-docker run --rm -v mirrorgap-data:/data --entrypoint node mirrorgap \
-  --import tsx apps/cli/src/main.ts radar
+docker run --rm -v mirrorgap-data:/data -w /app/apps/cli \
+  --entrypoint node mirrorgap --import tsx src/main.ts radar
 ```
 
 ## Environment

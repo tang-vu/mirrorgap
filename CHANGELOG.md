@@ -62,6 +62,9 @@ five surfaces (web, API, SSE, CLI, MCP) over one deterministic engine.
 - **UI navigation** — overview stat cards pointed at non-existent routes.
 - **Process leaks** — test/demo scripts spawned via `pnpm` wrappers that
   orphaned the server on Windows; they now spawn `node` directly.
+- **Docker CMD workdir** — `--import tsx` can't resolve `tsx` from `/app`
+  under pnpm's non-hoisted layout; the image now runs from `/app/apps/web`
+  (build + container verified: seeded lifecycle, healthy, non-root).
 
 ### Changed
 
