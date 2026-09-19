@@ -1,6 +1,7 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 import type { RuntimeInstance } from "@mirrorgap/runtime";
 import { CmcError } from "@mirrorgap/cmc";
+import { verifyReceipt, HISTORY_WINDOWS, type HistoryWindow, type Thresholds } from "@mirrorgap/core";
 
 type Params = Record<string, string>;
 type Handler = (req: IncomingMessage, res: ServerResponse, params: Params) => void | Promise<void>;
@@ -11,6 +12,8 @@ interface Route {
   keys: string[];
   handler: Handler;
 }
+
+const MAX_BODY = 64 * 1024; // mutation payloads are small; cap hard
 
 function route(method: string, path: string, handler: Handler): Route {
   const keys: string[] = [];
@@ -31,20 +34,131 @@ export function json(res: ServerResponse, status: number, body: unknown): void {
   res.end(payload);
 }
 
+function fail(res: ServerResponse, status: number, code: string, message: string): void {
+  json(res, status, { error: { code, message } });
+}
+
+/** Body errors carry an HTTP status + code so callers see 413/400, not a generic failure. */
+class BodyError extends Error {
+  constructor(
+    public status: number,
+    public code: string,
+    message: string,
+  ) {
+    super(message);
+  }
+}
+
+/** Read a JSON body with a hard size cap. Rejects oversized/invalid bodies. */
+function readJsonBody(req: IncomingMessage): Promise<unknown> {
+  return new Promise((resolve, reject) => {
+    const chunks: Buffer[] = [];
+    let size = 0;
+    req.on("data", (c: Buffer) => {
+      size += c.length;
+      if (size > MAX_BODY) {
+        reject(new BodyError(413, "payload_too_large", "request body exceeds 64 KiB"));
+        // Drain the remainder without accumulating so the socket stays alive and the
+        // 413 response reaches the client (destroy() would reset it mid-send).
+        req.removeAllListeners("data");
+        req.resume();
+        return;
+      }
+      chunks.push(c);
+    });
+    req.on("end", () => {
+      try {
+        resolve(chunks.length ? JSON.parse(Buffer.concat(chunks).toString("utf8")) : {});
+      } catch {
+        reject(new BodyError(400, "bad_json", "request body is not valid JSON"));
+      }
+    });
+    req.on("error", reject);
+  });
+}
+
+function bodyFail(res: ServerResponse, err: unknown): void {
+  if (err instanceof BodyError) return fail(res, err.status, err.code, err.message);
+  fail(res, 400, "bad_body", err instanceof Error ? err.message : String(err));
+}
+
+function query(req: IncomingMessage): URLSearchParams {
+  return new URL(req.url ?? "", "http://x").searchParams;
+}
+
+function boundedInt(raw: string | null, lo: number, hi: number, dflt: number): number {
+  const n = Number(raw);
+  if (!Number.isFinite(n)) return dflt;
+  return Math.max(lo, Math.min(hi, Math.trunc(n)));
+}
+
+const VALID_STATUSES = new Set(["candidate", "confirmed", "resolved", "invalidated"]);
+const VALID_SEVERITIES = new Set(["none", "info", "watch", "high", "critical"]);
+
 export function apiRoutes(instance: RuntimeInstance): Route[] {
   const { runtime, config, diagnostics } = instance;
 
-  const guardScan = (req: IncomingMessage, res: ServerResponse): boolean => {
+  /**
+   * Fixed-window rate limiter on mutations (scan triggers, watchlist writes).
+   * Read endpoints are unlimited — they serve the observatory UI. Mutations
+   * trigger CMC calls, so they get a per-IP cap: MUTATION_LIMIT per minute.
+   */
+  const MUTATION_LIMIT = 30;
+  const WINDOW_MS = 60_000;
+  const buckets = new Map<string, { count: number; resetAt: number }>();
+  const rateLimited = (req: IncomingMessage, res: ServerResponse): boolean => {
+    const ip = req.socket.remoteAddress ?? "unknown";
+    const now = Date.now();
+    let b = buckets.get(ip);
+    if (!b || now >= b.resetAt) {
+      b = { count: 0, resetAt: now + WINDOW_MS };
+      buckets.set(ip, b);
+      // bound the map: drop expired windows opportunistically
+      if (buckets.size > 10_000) {
+        for (const [k, v] of buckets) if (v.resetAt <= now) buckets.delete(k);
+      }
+    }
+    b.count += 1;
+    if (b.count <= MUTATION_LIMIT) return false;
+    res.setHeader("retry-after", Math.ceil((b.resetAt - now) / 1000));
+    fail(res, 429, "rate_limited", `mutation rate limit exceeded (${MUTATION_LIMIT}/min)`);
+    return true;
+  };
+
+  /**
+   * Mutation guard: protects scan triggers + watchlist writes.
+   * - Always enforces loopback-only when no scan token is configured.
+   * - Blocks cross-site browser requests (CSRF on loopback deployments):
+   *   a mutation carrying an Origin whose host doesn't match the request
+   *   Host is rejected.
+   * - Applies the mutation rate limit after auth checks pass.
+   */
+  const guardMutation = (req: IncomingMessage, res: ServerResponse): boolean => {
+    const origin = req.headers.origin;
+    if (origin) {
+      try {
+        const o = new URL(origin);
+        const host = req.headers.host ?? "";
+        if (o.host !== host) {
+          fail(res, 403, "forbidden_origin", "cross-origin mutations are not allowed");
+          return false;
+        }
+      } catch {
+        fail(res, 403, "forbidden_origin", "invalid Origin header");
+        return false;
+      }
+    }
     if (!config.scanToken) {
-      // No token configured: restrict to loopback callers only.
       const ip = req.socket.remoteAddress ?? "";
-      if (ip === "127.0.0.1" || ip === "::1" || ip === "::ffff:127.0.0.1") return true;
-      json(res, 403, { error: "scan trigger restricted to localhost without MIRRORGAP_SCAN_TOKEN" });
+      if (ip === "127.0.0.1" || ip === "::1" || ip === "::ffff:127.0.0.1") {
+        return !rateLimited(req, res);
+      }
+      fail(res, 403, "loopback_only", "mutations restricted to localhost without MIRRORGAP_SCAN_TOKEN");
       return false;
     }
-    const tok = req.headers["x-scan-token"] ?? new URL(req.url ?? "", "http://x").searchParams.get("token");
-    if (tok === config.scanToken) return true;
-    json(res, 403, { error: "scan token required" });
+    const tok = req.headers["x-scan-token"] ?? query(req).get("token");
+    if (tok === config.scanToken) return !rateLimited(req, res);
+    fail(res, 403, "scan_token_required", "valid x-scan-token required");
     return false;
   };
 
@@ -56,6 +170,21 @@ export function apiRoutes(instance: RuntimeInstance): Route[] {
         capabilities: runtime.capabilities(),
         uptimeSeconds: Math.round(process.uptime()),
       });
+    }),
+
+    // Deployment probes — healthz: process alive; readyz: store readable.
+    route("GET", "/api/v1/healthz", (_r, res) => json(res, 200, { ok: true })),
+    route("GET", "/api/v1/readyz", (_r, res) => {
+      try {
+        instance.runtime.store.latestScan();
+        json(res, 200, { ok: true, dataMode: config.dataMode });
+      } catch (err) {
+        fail(res, 503, "not_ready", err instanceof Error ? err.message : String(err));
+      }
+    }),
+
+    route("GET", "/api/v1/overview", (_r, res) => {
+      json(res, 200, runtime.overview());
     }),
 
     route("GET", "/api/v1/radar", (_r, res) => {
@@ -84,51 +213,188 @@ export function apiRoutes(instance: RuntimeInstance): Route[] {
       }));
       json(res, 200, {
         dataMode: config.dataMode,
-        marketPairs: capabilities(instance),
+        marketPairs: runtime.capabilities().marketPairs,
         generatedAt: new Date().toISOString(),
         assets: rows,
       });
     }),
 
     route("GET", "/api/v1/assets", (req, res) => {
-      const q = new URL(req.url ?? "", "http://x").searchParams.get("q") ?? "";
+      const q = query(req).get("q") ?? "";
       const assets = q ? instance.runtime.store.searchAssets(q) : instance.runtime.store.listAssets();
       json(res, 200, { assets });
     }),
 
-    route("GET", "/api/v1/assets/:rwaId", async (_r, res, p) => {
+    route("GET", "/api/v1/assets/:rwaId", (_r, res, p) => {
       const rwaId = Number(p["rwaId"]);
+      if (!Number.isInteger(rwaId)) return fail(res, 400, "bad_id", "rwaId must be an integer");
       const asset = instance.runtime.store.getAsset(rwaId);
-      if (!asset) return json(res, 404, { error: "unknown rwa_id" });
+      if (!asset) return fail(res, 404, "not_found", "unknown rwa_id");
       const snapshot = instance.runtime.store.latestSnapshot(rwaId);
       const reps = instance.runtime.store.listRepresentations(rwaId);
-      const events = instance.runtime.store.listEvents({ limit: 50 }).filter((e) => e.rwaId === rwaId);
-      json(res, 200, { asset, representations: reps, snapshot, events, dataMode: config.dataMode });
+      const events = instance.runtime.store.listEvents({ limit: 50, rwaId });
+      const watch = instance.runtime.store.getWatchEntry(rwaId);
+      json(res, 200, {
+        asset,
+        representations: reps,
+        snapshot,
+        events,
+        watched: watch?.enabled ?? false,
+        thresholds: watch?.thresholds ?? config.thresholds,
+        dataMode: config.dataMode,
+      });
+    }),
+
+    route("GET", "/api/v1/assets/:rwaId/history", (req, res, p) => {
+      const rwaId = Number(p["rwaId"]);
+      if (!Number.isInteger(rwaId)) return fail(res, 400, "bad_id", "rwaId must be an integer");
+      if (!instance.runtime.store.getAsset(rwaId)) {
+        return fail(res, 404, "not_found", "unknown rwa_id");
+      }
+      const rawWindow = query(req).get("window") ?? "24h";
+      if (!(HISTORY_WINDOWS as readonly string[]).includes(rawWindow)) {
+        return fail(res, 400, "bad_window", `window must be one of ${HISTORY_WINDOWS.join(", ")}`);
+      }
+      const maxPoints = boundedInt(query(req).get("maxPoints"), 16, 2000, 720);
+      const h = runtime.assetHistory(rwaId, {
+        window: rawWindow as HistoryWindow,
+        maxPoints,
+      });
+      json(res, 200, { rwaId, dataMode: config.dataMode, ...h });
     }),
 
     route("GET", "/api/v1/events", (req, res) => {
-      const status = new URL(req.url ?? "", "http://x").searchParams.get("status") ?? undefined;
-      json(res, 200, { events: runtime.listEvents(status ? { status } : {}) });
+      const q = query(req);
+      const status = q.get("status");
+      if (status && !VALID_STATUSES.has(status)) {
+        return fail(res, 400, "bad_status", `status must be one of ${[...VALID_STATUSES].join(", ")}`);
+      }
+      const rwaIdRaw = q.get("rwaId");
+      const rwaId = rwaIdRaw ? Number(rwaIdRaw) : undefined;
+      if (rwaIdRaw && !Number.isInteger(rwaId)) {
+        return fail(res, 400, "bad_id", "rwaId must be an integer");
+      }
+      const limit = boundedInt(q.get("limit"), 1, 500, 100);
+      json(res, 200, {
+        events: runtime.listEvents({
+          ...(status ? { status } : {}),
+          ...(rwaId !== undefined ? { rwaId } : {}),
+          limit,
+        }),
+        counts: instance.runtime.store.eventCountsByStatus(),
+      });
     }),
 
     route("GET", "/api/v1/events/:eventId", async (req, res, p) => {
       const d = runtime.getEventDetail(p["eventId"]!);
-      if (!d) return json(res, 404, { error: "unknown event" });
-      const wantExplain = new URL(req.url ?? "", "http://x").searchParams.get("explain");
+      if (!d) return fail(res, 404, "not_found", "unknown event");
+      const wantExplain = query(req).get("explain");
       const explanation = await runtime.explainEvent(p["eventId"]!, { llm: wantExplain === "llm" });
       json(res, 200, { ...d, explanation, dataMode: config.dataMode });
     }),
 
+    route("GET", "/api/v1/events/:eventId/timeline", (_r, res, p) => {
+      const tl = runtime.eventTimeline(p["eventId"]!);
+      if (!tl) return fail(res, 404, "not_found", "unknown event");
+      json(res, 200, tl);
+    }),
+
+    route("GET", "/api/v1/capsules/:eventId", (_r, res, p) => {
+      const capsule = runtime.evidenceCapsule(p["eventId"]!);
+      if (!capsule) return fail(res, 404, "not_found", "no evidence capsule for event");
+      json(res, 200, capsule);
+    }),
+
     route("GET", "/api/v1/receipts/:eventId", (_r, res, p) => {
       const receipt = instance.runtime.store.receiptForEvent(p["eventId"]!);
-      if (!receipt) return json(res, 404, { error: "no receipt for event" });
+      if (!receipt) return fail(res, 404, "not_found", "no receipt for event");
       json(res, 200, receipt);
     }),
 
     route("GET", "/api/v1/receipts/:eventId/verify", (_r, res, p) => {
       const v = runtime.verifyEventReceipt(p["eventId"]!);
-      if (!v) return json(res, 404, { error: "no receipt for event" });
+      if (!v) return fail(res, 404, "not_found", "no receipt for event");
       json(res, 200, v);
+    }),
+
+    // Independent verification: submit any receipt JSON, get schema + hash +
+    // signature verdict. Powers the tamper demonstration.
+    route("POST", "/api/v1/receipts/verify", async (req, res) => {
+      try {
+        const body = await readJsonBody(req);
+        json(res, 200, verifyReceipt(body));
+      } catch (err) {
+        bodyFail(res, err);
+      }
+    }),
+
+    // Public verification key (safe to expose; private key never leaves env).
+    route("GET", "/api/v1/verification-key", (_r, res) => {
+      json(res, 200, {
+        signing: instance.signingConfigured,
+        algorithm: instance.signingConfigured ? "ed25519" : null,
+        publicKey: instance.publicKey,
+      });
+    }),
+
+    route("GET", "/api/v1/watchlist", (_r, res) => {
+      json(res, 200, {
+        watchlist: runtime.listWatchlist(),
+        limit: config.watchLimit,
+      });
+    }),
+
+    route("POST", "/api/v1/watchlist", async (req, res) => {
+      if (!guardMutation(req, res)) return;
+      try {
+        const body = (await readJsonBody(req)) as {
+          symbol?: string;
+          rwaId?: number;
+          enabled?: boolean;
+          thresholds?: Partial<Thresholds> | null;
+        };
+        if (body.rwaId === undefined && !body.symbol) {
+          return fail(res, 400, "bad_body", "provide symbol or rwaId");
+        }
+        if (body.rwaId !== undefined && !Number.isInteger(body.rwaId)) {
+          return fail(res, 400, "bad_body", "rwaId must be an integer");
+        }
+        if (body.thresholds) {
+          for (const [k, v] of Object.entries(body.thresholds)) {
+            if (typeof v !== "number" || !Number.isFinite(v) || v < 0 || v > 100) {
+              return fail(res, 400, "bad_body", `threshold ${k} must be a number in [0,100]`);
+            }
+          }
+        }
+        const entry = await runtime.addToWatchlist({
+          ...(body.symbol ? { symbol: body.symbol } : {}),
+          ...(body.rwaId !== undefined ? { rwaId: body.rwaId } : {}),
+          thresholds: (body.thresholds as Thresholds | undefined) ?? null,
+        });
+        json(res, 201, { entry });
+      } catch (err) {
+        if (err instanceof BodyError) return bodyFail(res, err);
+        fail(res, 400, "watchlist_error", err instanceof Error ? err.message : String(err));
+      }
+    }),
+
+    route("DELETE", "/api/v1/watchlist/:rwaId", (req, res, p) => {
+      if (!guardMutation(req, res)) return;
+      const rwaId = Number(p["rwaId"]);
+      if (!Number.isInteger(rwaId)) return fail(res, 400, "bad_id", "rwaId must be an integer");
+      const removed = runtime.removeFromWatchlist(rwaId);
+      if (!removed) return fail(res, 404, "not_found", "asset not on watchlist");
+      json(res, 200, { removed: true, rwaId });
+    }),
+
+    route("GET", "/api/v1/alerts", (req, res) => {
+      const limit = boundedInt(query(req).get("limit"), 1, 500, 50);
+      json(res, 200, {
+        configured: runtime.alerts.configured,
+        minSeverity: config.alerts.minSeverity,
+        destinations: runtime.alerts.destinationLabels,
+        alerts: runtime.listAlertLog(limit),
+      });
     }),
 
     route("GET", "/api/v1/scans", (_r, res) => {
@@ -141,14 +407,14 @@ export function apiRoutes(instance: RuntimeInstance): Route[] {
     route("GET", "/api/v1/diagnostics", (_r, res) => {
       json(res, 200, {
         dataMode: config.dataMode,
-        capabilities: capabilities(instance),
+        capabilities: runtime.capabilities(),
         recent: instance.runtime.store.listDiagnostics(50),
         inMemory: diagnostics.entries.slice(-50),
       });
     }),
 
     route("POST", "/api/v1/scan", async (req, res) => {
-      if (!guardScan(req, res)) return;
+      if (!guardMutation(req, res)) return;
       try {
         const out = await runtime.scan();
         json(res, 200, { scan: out.scan, snapshots: out.snapshots.length, events: out.events.length });
@@ -183,10 +449,6 @@ export function apiRoutes(instance: RuntimeInstance): Route[] {
   ];
 }
 
-function capabilities(instance: RuntimeInstance): Record<string, string> {
-  return instance.runtime.capabilities();
-}
-
 /** Minimal router dispatcher. */
 export function createApiHandler(instance: RuntimeInstance) {
   const routes = apiRoutes(instance);
@@ -201,10 +463,15 @@ export function createApiHandler(instance: RuntimeInstance) {
       try {
         await r.handler(req, res, params);
       } catch (err) {
-        json(res, 500, { error: err instanceof Error ? err.message : String(err) });
+        if (!res.headersSent) {
+          fail(res, 500, "internal", err instanceof Error ? err.message : String(err));
+        }
       }
       return true;
     }
     return false;
   };
 }
+
+// severity set retained for query validation of future filters
+void VALID_SEVERITIES;

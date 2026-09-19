@@ -1,0 +1,597 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "MirrorGap API",
+    "version": "0.2.0",
+    "description": "The market integrity layer for tokenized real-world assets. Observe → Detect → Investigate → Prove.\n\nAll responses are JSON. Errors use `{ \"error\": { \"code\", \"message\" } }`. `dataMode` is `fixture` or `live` on every surface — fixture data is deterministic synthetic data, never live market data.\n\nMutations (`POST`, `DELETE`) are guarded: same-origin or loopback requests pass; remote callers need the `x-scan-token` header matching `MIRRORGAP_SCAN_TOKEN`.",
+    "contact": { "name": "MirrorGap", "url": "https://github.com/tang-vu/mirrorgap" }
+  },
+  "servers": [{ "url": "/", "description": "this instance" }],
+  "tags": [
+    { "name": "meta", "description": "Health, readiness, observatory overview" },
+    { "name": "observe", "description": "Radar, assets, scans" },
+    { "name": "investigate", "description": "Events, timelines, history" },
+    { "name": "prove", "description": "Receipts, capsules, verification" },
+    { "name": "operate", "description": "Watchlist, alerts, diagnostics, stream" }
+  ],
+  "paths": {
+    "/api/v1/health": {
+      "get": {
+        "tags": ["meta"],
+        "summary": "Service health + data mode + capability flags",
+        "operationId": "health",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Health" } } }
+          }
+        }
+      }
+    },
+    "/api/v1/healthz": {
+      "get": {
+        "tags": ["meta"],
+        "summary": "Liveness probe",
+        "operationId": "healthz",
+        "responses": { "200": { "description": "alive" } }
+      }
+    },
+    "/api/v1/readyz": {
+      "get": {
+        "tags": ["meta"],
+        "summary": "Readiness probe — store readable",
+        "operationId": "readyz",
+        "responses": {
+          "200": { "description": "ready" },
+          "503": {
+            "description": "not ready",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } }
+          }
+        }
+      }
+    },
+    "/api/v1/overview": {
+      "get": {
+        "tags": ["meta"],
+        "summary": "Observatory overview — assets, incidents, storage, config",
+        "operationId": "overview",
+        "responses": {
+          "200": {
+            "description": "overview counters",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Overview" } } }
+          }
+        }
+      }
+    },
+    "/api/v1/radar": {
+      "get": {
+        "tags": ["observe"],
+        "summary": "Integrity radar — latest snapshot per watched asset, ranked by divergence",
+        "operationId": "radar",
+        "responses": {
+          "200": {
+            "description": "radar rows",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Radar" } } }
+          }
+        }
+      }
+    },
+    "/api/v1/assets": {
+      "get": {
+        "tags": ["observe"],
+        "summary": "List/search watched RWA assets",
+        "operationId": "listAssets",
+        "parameters": [
+          {
+            "name": "q",
+            "in": "query",
+            "schema": { "type": "string" },
+            "description": "symbol/name substring filter"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "asset list",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "assets": { "type": "array", "items": { "$ref": "#/components/schemas/Asset" } }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/assets/{rwaId}": {
+      "get": {
+        "tags": ["observe"],
+        "summary": "Asset detail — identity, representations, latest snapshot, events, thresholds",
+        "operationId": "getAsset",
+        "parameters": [{ "$ref": "#/components/parameters/rwaId" }],
+        "responses": {
+          "200": { "description": "asset detail" },
+          "400": {
+            "description": "bad id",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } }
+          },
+          "404": {
+            "description": "unknown asset",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } }
+          }
+        }
+      }
+    },
+    "/api/v1/assets/{rwaId}/history": {
+      "get": {
+        "tags": ["investigate"],
+        "summary": "Integrity time series for one asset — bounded + deterministically downsampled",
+        "operationId": "assetHistory",
+        "parameters": [
+          { "$ref": "#/components/parameters/rwaId" },
+          {
+            "name": "window",
+            "in": "query",
+            "schema": { "type": "string", "enum": ["1h", "6h", "24h", "7d", "all"], "default": "24h" }
+          },
+          {
+            "name": "maxPoints",
+            "in": "query",
+            "schema": { "type": "integer", "minimum": 16, "maximum": 2000, "default": 720 }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "history series + stats",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/History" } } }
+          },
+          "400": {
+            "description": "bad id/window",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } }
+          },
+          "404": {
+            "description": "unknown asset",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } }
+          }
+        }
+      }
+    },
+    "/api/v1/events": {
+      "get": {
+        "tags": ["investigate"],
+        "summary": "List anomaly events with lifecycle status",
+        "operationId": "listEvents",
+        "parameters": [
+          {
+            "name": "status",
+            "in": "query",
+            "schema": { "type": "string", "enum": ["candidate", "confirmed", "resolved", "invalidated"] }
+          },
+          { "name": "rwaId", "in": "query", "schema": { "type": "integer" } },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": { "type": "integer", "minimum": 1, "maximum": 500, "default": 100 }
+          }
+        ],
+        "responses": {
+          "200": { "description": "event list + status counts" },
+          "400": {
+            "description": "bad filter",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } }
+          }
+        }
+      }
+    },
+    "/api/v1/events/{eventId}": {
+      "get": {
+        "tags": ["investigate"],
+        "summary": "Event detail — event, timeline, snapshot, investigation, receipt, verification, explanation",
+        "operationId": "getEvent",
+        "parameters": [
+          { "$ref": "#/components/parameters/eventId" },
+          {
+            "name": "explain",
+            "in": "query",
+            "schema": { "type": "string", "enum": ["llm"] },
+            "description": "optional LLM-assisted narrative (engine stays authoritative)"
+          }
+        ],
+        "responses": {
+          "200": { "description": "event detail" },
+          "404": {
+            "description": "unknown event",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } }
+          }
+        }
+      }
+    },
+    "/api/v1/events/{eventId}/timeline": {
+      "get": {
+        "tags": ["investigate"],
+        "summary": "Replayable incident timeline — every transition with its recorded market frame",
+        "operationId": "eventTimeline",
+        "parameters": [{ "$ref": "#/components/parameters/eventId" }],
+        "responses": {
+          "200": { "description": "timeline entries" },
+          "404": {
+            "description": "unknown event",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } }
+          }
+        }
+      }
+    },
+    "/api/v1/capsules/{eventId}": {
+      "get": {
+        "tags": ["prove"],
+        "summary": "Evidence Capsule — shareable proof bundle for an incident",
+        "operationId": "capsule",
+        "parameters": [{ "$ref": "#/components/parameters/eventId" }],
+        "responses": {
+          "200": { "description": "evidence capsule" },
+          "404": {
+            "description": "no capsule (event unconfirmed or unknown)",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } }
+          }
+        }
+      }
+    },
+    "/api/v1/receipts/{eventId}": {
+      "get": {
+        "tags": ["prove"],
+        "summary": "Canonical evidence receipt JSON (exact hashed payload)",
+        "operationId": "receipt",
+        "parameters": [{ "$ref": "#/components/parameters/eventId" }],
+        "responses": {
+          "200": { "description": "receipt" },
+          "404": {
+            "description": "no receipt",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } }
+          }
+        }
+      }
+    },
+    "/api/v1/receipts/{eventId}/verify": {
+      "get": {
+        "tags": ["prove"],
+        "summary": "Verify the stored receipt for an event",
+        "operationId": "verifyEventReceipt",
+        "parameters": [{ "$ref": "#/components/parameters/eventId" }],
+        "responses": {
+          "200": {
+            "description": "verification verdict",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/VerifyResult" } } }
+          },
+          "404": {
+            "description": "no receipt",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } }
+          }
+        }
+      }
+    },
+    "/api/v1/receipts/verify": {
+      "post": {
+        "tags": ["prove"],
+        "summary": "Independent verification — submit any receipt JSON, get schema + hash + signature verdict",
+        "operationId": "verifyReceiptBody",
+        "requestBody": {
+          "required": true,
+          "content": { "application/json": { "schema": { "type": "object" } } }
+        },
+        "responses": {
+          "200": {
+            "description": "verification verdict",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/VerifyResult" } } }
+          }
+        }
+      }
+    },
+    "/api/v1/verification-key": {
+      "get": {
+        "tags": ["prove"],
+        "summary": "Public Ed25519 verification key (never the private key)",
+        "operationId": "verificationKey",
+        "responses": { "200": { "description": "{ signing, algorithm, publicKey }" } }
+      }
+    },
+    "/api/v1/watchlist": {
+      "get": {
+        "tags": ["operate"],
+        "summary": "List watchlist entries",
+        "operationId": "listWatchlist",
+        "responses": { "200": { "description": "watchlist + limit" } }
+      },
+      "post": {
+        "tags": ["operate"],
+        "summary": "Add an asset to the watchlist (guarded mutation)",
+        "operationId": "addWatchlist",
+        "parameters": [{ "$ref": "#/components/parameters/scanToken" }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "symbol": { "type": "string" },
+                  "rwaId": { "type": "integer" },
+                  "thresholds": { "$ref": "#/components/schemas/Thresholds" }
+                }
+              },
+              "examples": {
+                "nvda": { "value": { "symbol": "NVDA" } },
+                "with-thresholds": {
+                  "value": {
+                    "symbol": "NVDA",
+                    "thresholds": { "info": 0.5, "watch": 1, "high": 2, "critical": 4 }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "entry added" },
+          "400": {
+            "description": "watchlist error",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } }
+          },
+          "403": {
+            "description": "mutation not permitted",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } }
+          }
+        }
+      }
+    },
+    "/api/v1/watchlist/{rwaId}": {
+      "delete": {
+        "tags": ["operate"],
+        "summary": "Remove an asset from the watchlist (guarded mutation)",
+        "operationId": "removeWatchlist",
+        "parameters": [
+          { "$ref": "#/components/parameters/rwaId" },
+          { "$ref": "#/components/parameters/scanToken" }
+        ],
+        "responses": {
+          "200": { "description": "removed" },
+          "403": {
+            "description": "mutation not permitted",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } }
+          },
+          "404": {
+            "description": "not on watchlist",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } }
+          }
+        }
+      }
+    },
+    "/api/v1/alerts": {
+      "get": {
+        "tags": ["operate"],
+        "summary": "Alert configuration (destinations are labels, never secrets) + delivery log",
+        "operationId": "alerts",
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": { "type": "integer", "minimum": 1, "maximum": 500, "default": 50 }
+          }
+        ],
+        "responses": { "200": { "description": "{ configured, minSeverity, destinations, alerts }" } }
+      }
+    },
+    "/api/v1/scans": {
+      "get": {
+        "tags": ["operate"],
+        "summary": "Recent scan records + latest",
+        "operationId": "scans",
+        "responses": { "200": { "description": "{ scans, latest }" } }
+      }
+    },
+    "/api/v1/diagnostics": {
+      "get": {
+        "tags": ["operate"],
+        "summary": "CMC integration diagnostics — recent calls, capabilities, in-memory log (no secrets)",
+        "operationId": "diagnostics",
+        "responses": { "200": { "description": "{ dataMode, capabilities, recent, inMemory }" } }
+      }
+    },
+    "/api/v1/scan": {
+      "post": {
+        "tags": ["operate"],
+        "summary": "Trigger an observation scan (guarded mutation)",
+        "operationId": "triggerScan",
+        "parameters": [{ "$ref": "#/components/parameters/scanToken" }],
+        "responses": {
+          "200": { "description": "{ scan, snapshots, events }" },
+          "403": {
+            "description": "mutation not permitted",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } }
+          },
+          "502": {
+            "description": "scan failed upstream",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } }
+          }
+        }
+      }
+    },
+    "/api/v1/stream": {
+      "get": {
+        "tags": ["operate"],
+        "summary": "Server-sent events — snapshot/event/scan_finished signals",
+        "operationId": "stream",
+        "responses": { "200": { "description": "text/event-stream", "content": { "text/event-stream": {} } } }
+      }
+    }
+  },
+  "components": {
+    "parameters": {
+      "rwaId": {
+        "name": "rwaId",
+        "in": "path",
+        "required": true,
+        "schema": { "type": "integer" },
+        "description": "CoinMarketCap RWA asset id (e.g. 2 = NVDA)"
+      },
+      "eventId": {
+        "name": "eventId",
+        "in": "path",
+        "required": true,
+        "schema": { "type": "string" },
+        "description": "anomaly event id (MG-YYYYMMDD-NNNN)"
+      },
+      "scanToken": {
+        "name": "x-scan-token",
+        "in": "header",
+        "required": false,
+        "schema": { "type": "string" },
+        "description": "mutation token when MIRRORGAP_SCAN_TOKEN is set"
+      }
+    },
+    "schemas": {
+      "Error": {
+        "type": "object",
+        "required": ["error"],
+        "properties": {
+          "error": {
+            "type": "object",
+            "required": ["code", "message"],
+            "properties": { "code": { "type": "string" }, "message": { "type": "string" } }
+          }
+        }
+      },
+      "Health": {
+        "type": "object",
+        "properties": {
+          "status": { "type": "string", "enum": ["ok"] },
+          "dataMode": { "type": "string", "enum": ["live", "fixture"] },
+          "capabilities": {
+            "type": "object",
+            "properties": { "marketPairs": { "type": "string", "enum": ["yes", "no", "unknown"] } }
+          },
+          "uptimeSeconds": { "type": "number" }
+        }
+      },
+      "Overview": {
+        "type": "object",
+        "properties": {
+          "dataMode": { "type": "string" },
+          "assetsWatched": { "type": "integer" },
+          "assetsAnomalous": { "type": "integer" },
+          "activeIncidents": { "type": "integer" },
+          "confirmedIncidents": { "type": "integer" },
+          "criticalOrHigh": { "type": "integer" },
+          "watchlistSize": { "type": "integer" },
+          "latestScan": { "type": ["object", "null"] },
+          "eventCounts": { "type": "object", "additionalProperties": { "type": "integer" } },
+          "storage": { "type": "object" },
+          "capabilities": { "type": "object" },
+          "alertsConfigured": { "type": "boolean" },
+          "signingConfigured": { "type": "boolean" }
+        }
+      },
+      "Radar": {
+        "type": "object",
+        "properties": {
+          "dataMode": { "type": "string" },
+          "marketPairs": { "type": "string" },
+          "generatedAt": { "type": "string", "format": "date-time" },
+          "assets": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "rwaId": { "type": "integer" },
+                "symbol": { "type": "string" },
+                "name": { "type": "string" },
+                "severity": { "type": "string", "enum": ["none", "info", "watch", "high", "critical"] },
+                "classification": { "type": "string" },
+                "referenceState": { "type": "string" },
+                "referenceFreshness": { "type": "string" },
+                "underlyingMarket": { "type": "string" },
+                "maxAbsGapPct": { "type": ["number", "null"] },
+                "dispersionPct": { "type": ["number", "null"] },
+                "wrapperCount": { "type": "integer" },
+                "dataQuality": { "type": "number" },
+                "measuredAt": { "type": "string", "format": "date-time" }
+              }
+            }
+          }
+        }
+      },
+      "Asset": {
+        "type": "object",
+        "properties": {
+          "rwaId": { "type": "integer" },
+          "symbol": { "type": "string" },
+          "name": { "type": "string" },
+          "assetType": { "type": "string" },
+          "primaryExchange": { "type": ["string", "null"] }
+        }
+      },
+      "History": {
+        "type": "object",
+        "properties": {
+          "rwaId": { "type": "integer" },
+          "window": { "type": "string" },
+          "dataMode": { "type": "string" },
+          "points": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "measuredAt": { "type": "string", "format": "date-time" },
+                "maxAbsGapPct": { "type": ["number", "null"] },
+                "maxSignedGapPct": { "type": ["number", "null"] },
+                "dispersionPct": { "type": ["number", "null"] },
+                "aggregateFreshness": { "type": "string" },
+                "referenceState": { "type": "string" },
+                "underlyingMarket": { "type": "string" },
+                "severity": { "type": "string" },
+                "dataQuality": { "type": "number" },
+                "wrapperCount": { "type": "integer" }
+              }
+            }
+          },
+          "stats": {
+            "type": "object",
+            "properties": {
+              "points": { "type": "integer" },
+              "peakAbsGapPct": { "type": ["number", "null"] },
+              "peakDispersionPct": { "type": ["number", "null"] },
+              "peakAt": { "type": ["string", "null"] },
+              "anomalousShare": { "type": "number" },
+              "staleShare": { "type": "number" },
+              "marketClosedShare": { "type": "number" }
+            }
+          }
+        }
+      },
+      "Thresholds": {
+        "type": "object",
+        "properties": {
+          "info": { "type": "number" },
+          "watch": { "type": "number" },
+          "high": { "type": "number" },
+          "critical": { "type": "number" }
+        },
+        "description": "severity bands in percent; each must exceed the previous"
+      },
+      "VerifyResult": {
+        "type": "object",
+        "properties": {
+          "ok": { "type": "boolean" },
+          "schemaOk": { "type": "boolean" },
+          "hashOk": { "type": "boolean" },
+          "signatureOk": { "type": ["boolean", "null"] },
+          "expectedHash": { "type": ["string", "null"] },
+          "actualHash": { "type": ["string", "null"] },
+          "errors": { "type": "array", "items": { "type": "string" } }
+        }
+      }
+    }
+  }
+}
