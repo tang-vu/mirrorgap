@@ -2,30 +2,37 @@
 
 > **Is tokenized reality still matching reality?**
 
-MirrorGap is an autonomous observatory for tokenized real-world assets (RWAs). It continuously compares tokenized asset representations against the best available reference observations, detects meaningful parity gaps and cross-wrapper disagreement, investigates anomalies deterministically, and issues **verifiable, machine-readable evidence receipts**.
+MirrorGap is an autonomous observatory for tokenized real-world assets (RWAs). It continuously compares tokenized asset representations against the best available reference observations, detects meaningful parity gaps and cross-wrapper disagreement, investigates anomalies deterministically, tracks each incident's lifecycle over time, and issues **verifiable, machine-readable evidence** — receipts and capsules that anyone can re-hash and check.
 
-**Track:** Real World Assets · **Data:** CoinMarketCap API · **Stack:** TypeScript monorepo, SQLite, vanilla UI, MCP
+**Track:** Real World Assets · **Data:** CoinMarketCap API · **Stack:** TypeScript monorepo, SQLite, vanilla UI, REST + SSE, CLI, MCP
+
+The loop: **Observe → Detect → Investigate → Prove.**
 
 ---
 
 ## The problem
 
-A tokenized stock, commodity, or fund can exist as several wrappers (e.g. `NVDAX`, `NVDAon`). Each trades 24/7 on crypto venues while the underlying reference trades on TradFi hours. When a wrapper drifts from its reference — or wrappers disagree with each other — who notices? Today: nobody systematically.
+A tokenized stock, commodity, or fund can exist as several wrappers (e.g. `NVDAX`, `NVDAon`). Each trades 24/7 on crypto venues while the underlying reference trades on TradFi hours. When a wrapper drifts from its reference — or wrappers disagree with each other — who notices? And when someone claims they noticed, who can _verify_ it? Today: nobody systematically.
 
 ## What MirrorGap does
 
 ```
-CMC RWA API ──► deterministic engine ──► event lifecycle ──► evidence receipt
- (observations)   (parity · dispersion ·   (candidate →        (canonical JSON +
-                  freshness · mkt hours)    confirmed)          SHA-256 · Ed25519)
+CMC RWA API ──► deterministic engine ──► event lifecycle ──► evidence
+ (observations)   (parity · dispersion ·   (candidate →          (receipt + capsule:
+                  freshness · mkt hours)    confirmed →           canonical JSON +
+                                           resolved/recurring)   SHA-256 · Ed25519)
 ```
 
 - **Parity radar** — every watched RWA, ranked by divergence, with explicit freshness (`fresh`/`aging`/`stale`) and underlying-market state (`open`/`closed`/`continuous`/`unknown`)
 - **Honest semantics** — a stale or `market_closed` reference produces a _price difference_, not a verified parity failure. After-hours drift is labeled, not sensationalized
 - **Cross-wrapper dispersion** — detects when wrappers disagree with each other, independent of market hours
+- **Incident lifecycle** — candidate → confirmed → resolved/invalidated, with severity escalation, peak divergence, recurrence detection, and a replayable transition log
+- **History** — per-asset time series (deviation, dispersion, freshness, market state) with downsampling and stats
 - **Claim ledger** — every investigation statement is classified `observed` / `derived` / `supported_hypothesis` / `unknown`. The engine never invents causes
 - **Evidence receipts** — canonical JSON → SHA-256 → optional Ed25519 signature. Anyone can re-hash and verify; tampering is detected
-- **Live vs fixture** — always visible. Every provenance record carries the data mode
+- **Evidence Capsules** — shareable incident bundles: receipt + verification verdict + asset/lifecycle context + claim summary + provenance + limitations
+- **Watchlists + alerts** — pin assets, override thresholds per asset, get lifecycle-aware alerts (webhook/Discord/Telegram) with deduplication — escalations re-alert, repeats don't
+- **Live vs fixture** — always visible. Every provenance record carries the data mode; fixtures follow a scripted incident scenario
 
 ## Quickstart
 
@@ -33,16 +40,28 @@ Requires Node.js ≥ 20 and pnpm.
 
 ```bash
 pnpm install
-pnpm mirrorgap scan --fixture          # zero-config demo: no API key needed
-pnpm --filter @mirrorgap/web dev       # observatory UI → http://localhost:8787
+pnpm mirrorgap seed --ticks 31          # deterministic demo history (fixture)
+pnpm --filter @mirrorgap/web dev        # observatory UI → http://localhost:8787
+```
+
+Or zero-config, one command:
+
+```bash
+pnpm mirrorgap scan --fixture           # no API key needed
+```
+
+**Docker** (single container, fixture demo):
+
+```bash
+docker compose up --build               # → http://localhost:8787, seeded
 ```
 
 **Live mode** — set your CoinMarketCap key (server-side only, never shipped to the browser):
 
 ```bash
 export CMC_API_KEY=your_key_here
-pnpm mirrorgap doctor                  # verifies key, plan, capabilities
-pnpm mirrorgap scan                    # real CMC data
+pnpm mirrorgap doctor                   # verifies key, plan, capabilities
+pnpm mirrorgap scan                     # real CMC data
 ```
 
 Works on the **Basic/Startup plan** — `market-pairs` (Growth+) is feature-detected and visibly labeled unavailable when plan-gated.
@@ -52,31 +71,53 @@ Works on the **Basic/Startup plan** — `market-pairs` (Growth+) is feature-dete
 ```bash
 mirrorgap doctor                       # config, mode, capabilities, key info
 mirrorgap scan [--symbols NVDA,TSLA]   # one observation scan
+mirrorgap radar                        # integrity radar, ranked by divergence
 mirrorgap inspect NVDA                 # parity gaps, dispersion, freshness
+mirrorgap history NVDA --window 7d     # time series + stats
 mirrorgap watch                        # continuous scan loop
 mirrorgap events [--status confirmed]  # anomaly lifecycle
-mirrorgap event MG-20260918-0001       # claim ledger + receipt
-mirrorgap receipt MG-20260918-0001 --verify   # independent hash verification
-mirrorgap cmc-proof                    # proof of real CMC calls (key info + credits)
+mirrorgap event MG-20260919-0001       # claim ledger + receipt
+mirrorgap timeline MG-20260919-0001    # replayable incident narrative
+mirrorgap capsule MG-20260919-0001     # shareable evidence bundle
+mirrorgap receipt MG-20260919-0001 --verify   # independent hash verification
+mirrorgap watchlist add NVDA --thresholds 0.5,1,2,4
+mirrorgap alerts                       # alert destinations + recent log
+mirrorgap seed --ticks 31              # replay deterministic fixture history
+mirrorgap stats                        # storage + scan stats
+mirrorgap cmc-proof                    # proof of real CMC calls
+mirrorgap serve                        # web server (same as pnpm dev)
 ```
+
+Every command supports `--json` for machine-readable output and `--fixture`/`--live`/`--db <path>` overrides.
 
 ## HTTP API
 
-| Route                                                      | Purpose                                                      |
-| ---------------------------------------------------------- | ------------------------------------------------------------ |
-| `GET /api/v1/radar`                                        | integrity radar, ranked by divergence                        |
-| `GET /api/v1/assets?q=` `GET /api/v1/assets/:rwaId`        | search + asset detail                                        |
-| `GET /api/v1/events` `GET /api/v1/events/:eventId?explain` | event lifecycle + claim ledger                               |
-| `GET /api/v1/receipts/:eventId` `/verify`                  | receipt JSON + independent verification                      |
-| `POST /api/v1/scan`                                        | trigger a scan (token-guarded if `MIRRORGAP_SCAN_TOKEN` set) |
-| `GET /api/v1/stream`                                       | SSE live updates                                             |
-| `GET /api/v1/diagnostics`                                  | CMC call log: endpoints, status, credits, latency            |
+| Route                                                     | Purpose                                             |
+| --------------------------------------------------------- | --------------------------------------------------- |
+| `GET /api/v1/health` `· /healthz` `· /readyz`             | status + deployment probes                          |
+| `GET /api/v1/overview`                                    | observatory counters for the dashboard              |
+| `GET /api/v1/radar`                                       | integrity radar, ranked by divergence               |
+| `GET /api/v1/assets?q=` `GET /api/v1/assets/:rwaId`       | search + asset detail                               |
+| `GET /api/v1/assets/:rwaId/history?window=…`              | time series + stats (`1h/6h/24h/7d/all`, bounded)   |
+| `GET /api/v1/events` `GET /api/v1/events/:eventId`        | event lifecycle + claim ledger                      |
+| `GET /api/v1/events/:eventId/timeline`                    | replayable incident narrative + snapshot frames     |
+| `GET /api/v1/capsules/:eventId`                           | Evidence Capsule (receipt + context + verification) |
+| `GET /api/v1/receipts/:eventId` `/verify` `POST …/verify` | receipt JSON + independent verification             |
+| `GET /api/v1/verification-key`                            | public verification key (never the private key)     |
+| `GET/POST/DELETE /api/v1/watchlist`                       | persistent watchlist + per-asset thresholds         |
+| `GET /api/v1/alerts`                                      | alert destinations + recent alert log               |
+| `GET /api/v1/scans` `POST /api/v1/scan`                   | scan history + trigger (guarded)                    |
+| `GET /api/v1/stream`                                      | SSE live updates                                    |
+| `GET /api/v1/diagnostics`                                 | CMC call log: endpoints, status, credits, latency   |
+| `GET /openapi.json`                                       | OpenAPI spec                                        |
+
+Error envelope: `{ "error": { "code", "message" } }`. Mutations are origin-checked, loopback/token-guarded, body-capped (64 KiB → 413), and rate-limited (30/min/IP → 429).
 
 ## MCP server
 
-Exposes the engine to AI agents — tools go far beyond price lookups:
+Exposes the engine to AI agents — investigation tools, not price lookups:
 
-`mirrorgap_scan` · `mirrorgap_radar` · `mirrorgap_inspect_asset` · `mirrorgap_list_events` · `mirrorgap_get_event` · `mirrorgap_verify_receipt` · `mirrorgap_cmc_status`
+`mirrorgap_scan` · `mirrorgap_radar` · `mirrorgap_inspect_asset` · `mirrorgap_list_events` · `mirrorgap_get_event` · `mirrorgap_verify_receipt` · `mirrorgap_history` · `mirrorgap_timeline` · `mirrorgap_capsule` · `mirrorgap_watchlist` · `mirrorgap_overview` · `mirrorgap_cmc_status`
 
 ```json
 { "mcpServers": { "mirrorgap": { "command": "pnpm", "args": ["--filter", "@mirrorgap/mcp", "start"] } } }
@@ -98,27 +139,32 @@ All under `https://pro-api.coinmarketcap.com` with `X-CMC_PRO_API_KEY`:
 ```
 packages/core      deterministic engine: parity, dispersion, freshness,
                    market-hours heuristic, anomaly classification, event
-                   lifecycle, investigation claim ledger, receipts
+                   lifecycle, claim ledger, history, timelines, receipts,
+                   capsules
 packages/cmc       CMC adapter: zod-validated responses, retry/backoff,
                    TTL cache, rate limiter, diagnostics, feature detection,
-                   fixture source (9 scenarios)
+                   fixture source (scripted incident-cycle scenario)
 packages/storage   SQLite store: migrations, assets/observations/snapshots/
-                   events/investigations/receipts/diagnostics
-packages/runtime   scan orchestration, event persistence, explanation layer
+                   events/transitions/investigations/receipts/watchlist/
+                   alert_log/diagnostics, retention pruning
+packages/runtime   scan orchestration, lifecycle transitions, alerting,
+                   history/timeline/capsule assembly, fixture seed replay
 apps/web           HTTP API + SSE + observatory UI (zero-build vanilla SPA)
-apps/cli           mirrorgap CLI
-apps/mcp           MCP server
+apps/cli           mirrorgap CLI (modular commands, --json everywhere)
+apps/mcp           MCP server over stdio (12 tools)
 ```
 
 ## Verify it yourself
 
 ```bash
-pnpm test           # 60+ tests incl. end-to-end scan→receipt pipeline
+pnpm test           # 90+ tests incl. end-to-end scan→receipt pipeline
 pnpm typecheck      # strict TS across all packages
 pnpm demo:check     # boots the server, scans, verifies a receipt — prints PASS
+pnpm e2e            # headless-Chrome smoke: views, replay, tamper flow
+pnpm bench          # endpoint latency benchmark
 ```
 
-Tamper test: edit any number inside a stored receipt, then `--verify` → hash mismatch detected.
+Tamper test: edit any number inside a stored receipt, then `--verify` → hash mismatch detected. The same flow is built into the capsule view's tamper playground.
 
 ## What CMC made possible
 

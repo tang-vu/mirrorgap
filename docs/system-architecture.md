@@ -40,13 +40,56 @@
 
 ## Data flow per scan
 
-1. `resolveWatchlist` → map (`has_tokens`, top `watchLimit` by rank)
+1. `resolveWatchlist` → map (`has_tokens`, top `watchLimit` by rank) ∪
+   enabled rows in the `watchlist` table
 2. `getRwaQuotes({rwaId: ids})` — one batched call (1 credit/250 ids)
 3. `getRwaInfo` (cached) — `primary_exchange` enrichment
 4. Per entry: normalize → `RwaAsset`, `TokenRepresentation[]`, `ReferenceObservation`, `TokenObservation[]`, `TradfiMarketContext[]`
 5. `evaluateAsset` (pure) → `IntegritySnapshot` + optional anomaly
-6. `applyScanToEvent` → lifecycle transition (create/confirm/update/resolve)
-7. On `confirmed`: `buildInvestigation` (claim ledger) → `buildReceipt` → optional Ed25519 sign → persist → emit on bus
+   (per-asset thresholds from the watchlist override global config)
+6. `applyScanToEvent` → lifecycle transition recorded in
+   `event_transitions` (create/confirm/escalate/de-escalate/peak/resolve/
+   invalidate/recurrence)
+7. On `confirmed`: `buildInvestigation` (claim ledger) → `buildReceipt` →
+   optional Ed25519 sign → persist → `alertDispatcher` (deduplicated,
+   severity-floor, webhook/Discord/Telegram) → emit on bus
+8. Retention: rows older than `MIRRORGAP_RETENTION_DAYS` pruned post-scan
+
+## Derived views (built on demand, no duplication)
+
+- **History** — `assetHistory(rwaId, window)`: snapshots →
+  `HistoryPoint[]` (deviation, dispersion, freshness, market state) +
+  `HistoryStats`, downsampled to a bounded point count
+- **Timeline** — `eventTimeline(eventId)`: event + transitions + receipt
+  issuance → narrative `TimelineEntry[]`, each carrying a replay `frame`
+  (referenceState, market, freshness, dispersion, gaps)
+- **Capsule** — `evidenceCapsule(eventId)`: receipt + verification
+  verdict + lifecycle stats + claim summary + provenance + limitations —
+  the shareable proof bundle
+- **Overview** — `overview()`: counters for the dashboard (assets,
+  incidents by status, watchlist size, storage stats, capabilities)
+
+## Fixture scenario
+
+`incident_cycle` (default) is a deterministic script: each `advance()`
+tick moves every fixture asset through quiet → candidate → escalation →
+peak divergence → resolution → recurrence phases. `MIRRORGAP_SEED_TICKS`
+replays real scans at pinned timestamps on boot, so the observatory
+starts with a full lifecycle on record — the demo path. Live sources
+simply do not implement `advance()`.
+
+## HTTP surface (apps/web)
+
+- Security headers on every response (CSP `default-src 'self'`, nosniff,
+  frame-deny, referrer/permissions policy)
+- Read endpoints: public, CORS `*` (no credentials involved)
+- Mutations (`POST /scan`, watchlist writes): Origin/Host match check →
+  loopback-only unless `MIRRORGAP_SCAN_TOKEN` → `x-scan-token` →
+  per-IP rate limit (30/min → 429 + `retry-after`)
+- Bodies: 64 KiB cap (413 `payload_too_large`), strict JSON
+  (400 `bad_json`), zod validation at boundaries
+- Structured error envelope `{ error: { code, message } }` everywhere
+- Probes: `/api/v1/healthz` (liveness), `/api/v1/readyz` (readiness)
 
 ## Key invariants
 
@@ -59,6 +102,7 @@
 ## Persistence (SQLite, WAL)
 
 `assets` · `issuers` · `representations` · `observations` · `snapshots` ·
-`events` · `investigations` · `receipts` · `scan_runs` · `diagnostics` ·
+`events` · `event_transitions` · `investigations` · `receipts` ·
+`watchlist` · `alert_log` · `scan_runs` · `diagnostics` ·
 `meta` (id sequences). All domain payloads stored as canonical JSON —
 re-validated on read; migrations via `schema_migrations` table.

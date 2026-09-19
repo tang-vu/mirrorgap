@@ -20,9 +20,11 @@ Every scan cycle, MirrorGap pulls the CoinMarketCap RWA dataset and evaluates ea
 - **Freshness** — `fresh`/`aging`/`stale`/`unavailable`, explicitly
 - **Market-hours semantics** — a stale or closed reference produces a _price difference_, never a false "verified parity failure"
 
-Detected anomalies enter a lifecycle (candidate → confirmed → resolved/invalidated), get a deterministic investigation whose every claim is labeled `observed` / `derived` / `supported_hypothesis` / `unknown`, and a **verifiable evidence receipt** — canonical JSON, SHA-256 hashed, Ed25519-signable. Anyone can re-hash and detect tampering. The system states what it measured; it never invents causes.
+Detected anomalies enter a lifecycle (candidate → confirmed → resolved/invalidated) whose every transition is recorded — escalation, peak divergence, recurrence — and replayable as a timeline. Each incident gets a deterministic investigation whose claims are labeled `observed` / `derived` / `supported_hypothesis` / `unknown`, a **verifiable evidence receipt** (canonical JSON, SHA-256, Ed25519-signable), and a shareable **Evidence Capsule** bundling receipt + verification + context + provenance. Anyone can re-hash and detect tampering. The system states what it measured; it never invents causes.
 
-Delivered surfaces: a live observatory UI (radar + search + asset detail + event investigation + relationship graph), a REST API with SSE, a CLI (`scan`, `inspect`, `watch`, `receipt --verify`, `cmc-proof`), and an MCP server exposing the engine to agents.
+History is queryable per asset (deviation/dispersion/freshness series + stats), watchlists persist with per-asset thresholds, and lifecycle-aware alerts (webhook/Discord/Telegram) deduplicate repeats while re-alerting escalations.
+
+Delivered surfaces: a live observatory UI (dashboard, radar, asset history charts, incident timeline replay, capsule view, watchlist, diagnostics), a versioned REST API with SSE + OpenAPI spec, a modular CLI (16 commands, `--json` everywhere), and a 12-tool MCP server exposing the engine to agents. Ships with Dockerfile + compose for a one-command deploy.
 
 ## Why CoinMarketCap
 
@@ -30,11 +32,13 @@ The RWA endpoint family is the only crypto API exposing **both sides** of a toke
 
 ## Proof it works
 
-- `pnpm demo:check` — boots the server, scans, verifies a receipt end-to-end
+- `pnpm demo:check` — boots the server, scans, verifies a receipt end-to-end (9 checks)
+- `pnpm e2e` — headless-Chrome smoke: every view, timeline replay, capsule verify, tamper flow (15 checks)
 - `mirrorgap cmc-proof` — prints `/v1/key/info` + every CMC call (endpoint, status, credits, latency), key redacted
 - `mirrorgap receipt <id> --verify` — independent hash verification; tamper any field → detected
 - Fixture mode needs no key and is visibly labeled everywhere; live mode is one env var away
-- 70+ tests across the engine, adapter, store, runtime, API, and MCP tools
+- 94 tests across the engine, adapter, store, runtime, API (19 HTTP cases), and MCP tools
+- `docker compose up --build` — one-command deploy with a seeded incident history
 
 ## Links
 
