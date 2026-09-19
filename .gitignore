@@ -8,7 +8,7 @@ dist/
 out/
 *.tsbuildinfo
 
-# Environment / secrets — NEVER commit
+# Environment / secrets â€” NEVER commit
 .env
 .env.*
 !.env.example
@@ -37,3 +37,9 @@ Thumbs.db
 coverage/
 playwright-report/
 test-results/
+
+# AI assistant artifacts
+.devin/
+.claude/settings.local.json
+.claude/scheduled_tasks.lock
+NUL
