@@ -15,7 +15,9 @@ const views = {
 
 let routeVersion = 0;
 let currentView = "";
+let currentPath = "";
 let mounted = false;
+let dispose;
 
 const ctx = {
   navigate(path) {
@@ -38,9 +40,20 @@ const ctx = {
 async function route() {
   const parts = location.hash.replace(/^#\/?/, "").split("/").filter(Boolean);
   const view = parts[0] && views[parts[0]] ? parts[0] : "overview";
-  const params = parts.slice(1).map(decodeURIComponent);
+  const params = parts.slice(1).map((p) => {
+    try {
+      return decodeURIComponent(p);
+    } catch {
+      return p;
+    }
+  });
   const version = ++routeVersion;
-  const changed = view !== currentView;
+  const changed = location.hash !== currentPath;
+  currentPath = location.hash;
+  if (changed) {
+    dispose?.();
+    dispose = null;
+  }
   currentView = view;
   $$(".tab").forEach((t) =>
     t.classList.toggle(
@@ -56,9 +69,32 @@ async function route() {
   try {
     const mod = await views[view]();
     const surface = document.createElement("div");
-    await mod.mount(surface, ctx, params);
-    if (version !== routeVersion) return;
+    const scoped = {
+      ...ctx,
+      setMode: (mode) => {
+        if (version === routeVersion) ctx.setMode(mode);
+      },
+      setCapability: (cap) => {
+        if (version === routeVersion) ctx.setCapability(cap);
+      },
+    };
+    await mod.mount(surface, scoped, params);
+    if (version !== routeVersion) {
+      surface.__cleanup?.();
+      return;
+    }
+    dispose?.();
+    dispose = surface.__cleanup;
+    surface.querySelectorAll("table").forEach((table) => {
+      if (!table.parentElement.matches(".table-scroll, .review-table")) {
+        const wrap = document.createElement("div");
+        wrap.className = "table-scroll";
+        table.replaceWith(wrap);
+        wrap.append(table);
+      }
+    });
     el.replaceChildren(surface);
+    surface.__afterMount?.();
     mounted = true;
     document.title = `MirrorGap — ${view.charAt(0).toUpperCase() + view.slice(1)}`;
     $$(".tab").forEach((t) =>
@@ -119,7 +155,10 @@ function connectStream() {
   const streamStatus = (connected) => {
     const dot = $("#live-dot");
     dot.classList.toggle("on", connected);
-    dot.title = connected ? "Observation stream connected" : "Observation stream disconnected";
+    dot.title = connected
+      ? "SSE transport connected · not a market-data mode"
+      : "SSE disconnected · retained data remains available";
+    $("#stream-label").textContent = connected ? "Stream connected" : "Stream disconnected";
     dot.setAttribute("aria-label", dot.title);
   };
   es.onopen = () => streamStatus(true);
@@ -134,6 +173,14 @@ function connectStream() {
 
 /* ---------------- boot ---------------- */
 if (!location.hash) history.replaceState(null, "", "#/overview");
+api("/api/v1/health")
+  .then((d) => {
+    ctx.setMode(d.dataMode);
+    ctx.setCapability(d.capabilities);
+  })
+  .catch(() => {
+    $("#mode-badge").textContent = "mode unknown";
+  });
 route();
 connectStream();
 setInterval(() => {

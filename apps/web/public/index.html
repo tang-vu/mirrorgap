@@ -25,23 +25,26 @@
         </svg>
         <div>
           <h1>MirrorGap</h1>
-          <p class="tagline">TOKENIZED ASSETS / OBSERVABLE TRUTH</p>
+          <p class="tagline">TOKENIZED MARKETS / EVIDENCE OBSERVATORY</p>
         </div>
       </a>
       <div class="topbar-right">
         <span id="mode-badge" class="badge badge-mode" title="Data source mode">…</span>
         <span id="cap-badge" class="badge badge-cap" title="CMC plan capability">…</span>
-        <span id="live-dot" class="live-dot" title="SSE disconnected" role="status"></span>
+        <span id="live-dot" class="live-dot" title="SSE disconnected" role="status"></span
+        ><span id="stream-label" class="stream-label">Stream connecting</span>
       </div>
     </header>
 
-    <nav class="tabs" aria-label="Primary">
-      <button class="tab" data-view="overview">Overview</button>
-      <button class="tab" data-view="radar">Integrity Radar</button>
-      <button class="tab" data-view="events">Incidents</button>
-      <button class="tab" data-view="watchlist">Watchlist</button>
-      <button class="tab" data-view="diagnostics">Diagnostics</button>
-      <button class="tab" data-view="about">How it works</button>
+    <div class="navigation-shell">
+      <nav class="tabs" aria-label="Primary">
+        <button class="tab" data-view="overview">Overview</button>
+        <button class="tab" data-view="radar">Observation desk</button>
+        <button class="tab" data-view="events">Incidents</button>
+        <button class="tab" data-view="watchlist">Watchlist</button>
+        <button class="tab" data-view="diagnostics">Diagnostics</button>
+        <button class="tab" data-view="about">How it works</button>
+      </nav>
       <div class="search-box">
         <input
           id="search"
@@ -52,7 +55,7 @@
         />
         <div id="search-results" class="search-results hidden"></div>
       </div>
-    </nav>
+    </div>
 
     <div id="fixture-banner" class="fixture-banner hidden" role="note">
       <strong>DEMO ENVIRONMENT</strong>

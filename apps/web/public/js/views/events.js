@@ -3,8 +3,9 @@ import { $, $$, api, ago, errorCard, esc, sevClass } from "../util.js";
 
 const STATUSES = ["", "candidate", "confirmed", "resolved", "invalidated"];
 
+let retainedStatus = "";
 export async function mount(el, ctx) {
-  let status = "";
+  let status = retainedStatus;
   const render = async () => {
     try {
       const d = await api(`/api/v1/events${status ? `?status=${status}` : ""}`);
@@ -21,7 +22,7 @@ export async function mount(el, ctx) {
               ${STATUSES.map((s) => `<option value="${s}" ${s === status ? "selected" : ""}>${s || "all"}</option>`).join("")}
             </select>
           </div>
-          <table class="table" id="event-table">
+          <div class="table-scroll"><table class="table" id="event-table">
             <thead><tr>
               <th>Incident</th><th>Asset</th><th>Kind</th><th>Class</th><th>Severity</th><th>Status</th><th>Dev</th><th>Peak</th><th>Conf</th><th>Last seen</th>
             </tr></thead>
@@ -29,8 +30,8 @@ export async function mount(el, ctx) {
               ${
                 (d.events ?? [])
                   .map(
-                    (e) => `<tr data-event="${esc(e.eventId)}" tabindex="0">
-                <td class="mono">${esc(e.eventId)}</td>
+                    (e) => `<tr>
+                <td class="mono"><a href="#/event/${encodeURIComponent(e.eventId)}">${esc(e.eventId)}</a></td>
                 <td><strong>${esc(e.assetSymbol)}</strong></td>
                 <td>${esc(e.kind)}</td>
                 <td><span class="muted">${esc(e.classification)}</span></td>
@@ -45,16 +46,11 @@ export async function mount(el, ctx) {
                   .join("") || `<tr><td colspan="10" class="muted">no incidents match</td></tr>`
               }
             </tbody>
-          </table>
+          </table></div>
         </div>`;
       $("#event-filter", el).addEventListener("change", (ev) => {
-        status = ev.target.value;
+        status = retainedStatus = ev.target.value;
         render();
-      });
-      $$("#event-table tbody tr[data-event]", el).forEach((tr) => {
-        const go = () => ctx.navigate(`event/${tr.dataset.event}`);
-        tr.addEventListener("click", go);
-        tr.addEventListener("keydown", (e) => e.key === "Enter" && go());
       });
     } catch (e) {
       el.innerHTML = errorCard(e, true);

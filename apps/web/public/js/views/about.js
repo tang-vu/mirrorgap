@@ -19,6 +19,8 @@ export async function mount(el) {
         <div class="pipe-step">Prove<br /><small>Evidence Capsule · SHA-256 · Ed25519</small></div>
       </div>
 
+      <img src="/optical-bench.svg" width="880" height="240" style="width:100%;height:auto" alt="Three observation paths align to a labeled comparison plane; a signed offset is retained as evidence. Concept diagram, not market measurements.">
+      <h3>Three comparison planes</h3><ol><li><strong>CMC tokenized aggregate:</strong> wrapper versus the provider’s tokenized-market average. This is not an independent underlying quote.</li><li><strong>Leave-one-out peers:</strong> wrapper versus the median of other same-currency wrappers. Same-provider agreement is not independent corroboration; disagreement does not identify the correct wrapper.</li><li><strong>Analyst underlying quote:</strong> price multiplied by explicit units per token. Accepted inputs remain indicative and unauthenticated. No automatic feed, FX conversion or corporate-action adjustment.</li></ol>
       <h3>What counts as an anomaly</h3>
       <ul>
         <li><strong>parity_gap</strong> — a wrapper's price diverges from the tokenized-asset aggregate reference.</li>

@@ -37,7 +37,7 @@ export function lineChart(points, opts = {}) {
   // gridlines + y labels
   for (let i = 0; i <= 4; i++) {
     const y = yMin + ((yMax - yMin) * i) / 4;
-    svg += `<line x1="${padL}" y1="${Y(y)}" x2="${W - padR}" y2="${Y(y)}" stroke="#deded5" stroke-width="1"/>`;
+    svg += `<line x1="${padL}" y1="${Y(y)}" x2="${W - padR}" y2="${Y(y)}" stroke="#ccd7db" stroke-width="1"/>`;
     svg += `<text x="${padL - 6}" y="${Y(y) + 3}" text-anchor="end" class="axis">${y.toFixed(2)}</text>`;
   }
   // x labels: 4 ticks
@@ -88,17 +88,20 @@ export function lineChart(points, opts = {}) {
     }
     if (open)
       area += `L${lastX.toFixed(1)},${Y(yMin).toFixed(1)} L${firstX.toFixed(1)},${Y(yMin).toFixed(1)} Z`;
-    svg += `<path d="${area}" fill="${opts.color ?? "#c54b2b"}" opacity="0.12"/>`;
+    svg += `<path d="${area}" fill="${opts.color ?? "#c34736"}" opacity="0.12"/>`;
   }
-  svg += `<path d="${d}" fill="none" stroke="${opts.color ?? "#c54b2b"}" stroke-width="1.8"/>`;
+  svg += `<path d="${d}" fill="none" stroke="${opts.color ?? "#c34736"}" stroke-width="1.8"/>`;
   // severity dots
   for (const p of points) {
     if (p.y === null || p.y === undefined) continue;
-    const col = p.sev ? (SEV_COLOR[p.sev] ?? "#697166") : (opts.color ?? "#c54b2b");
-    svg += `<circle cx="${X(p.t).toFixed(1)}" cy="${Y(p.y).toFixed(1)}" r="2.6" fill="${col}"><title>${esc(p.t.slice(11, 19))} · ${p.y.toFixed(3)}</title></circle>`;
+    const col = p.sev ? (SEV_COLOR[p.sev] ?? "#697166") : (opts.color ?? "#c34736");
+    svg += `<circle data-time="${esc(p.t)}" cx="${X(p.t).toFixed(1)}" cy="${Y(p.y).toFixed(1)}" r="2.6" fill="${col}"><title>${esc(p.t.slice(11, 19))} · ${p.y.toFixed(3)}</title></circle>`;
   }
   svg += "</svg>";
-  return svg;
+  return (
+    svg +
+    `<p class="chart-caption">${esc(opts.yLabel ?? "series")} · UTC ${esc(points[0]?.t)} → ${esc(points.at(-1)?.t)} · ${points.filter((p) => p.y == null).length} missing measurements (line breaks)</p>`
+  );
 }
 
 /** Compact sparkline for table cells. */
@@ -119,5 +122,5 @@ export function sparkline(values, opts = {}) {
     })
     .filter(Boolean)
     .join(" ");
-  return `<svg width="${W}" height="${H}" class="spark"><polyline points="${pts}" fill="none" stroke="${opts.color ?? "#c54b2b"}" stroke-width="1.5"/></svg>`;
+  return `<svg width="${W}" height="${H}" class="spark"><polyline points="${pts}" fill="none" stroke="${opts.color ?? "#c34736"}" stroke-width="1.5"/></svg>`;
 }

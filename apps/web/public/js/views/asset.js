@@ -20,15 +20,7 @@ import { mountWorkbench } from "../workbench.js";
 const WINDOWS = ["1h", "6h", "24h", "7d", "all"];
 
 export async function mount(el, ctx, params) {
-  const rwaId = params[0];
-  let win = "24h";
-  const redraw = () => render(el, ctx, rwaId, win);
-  await render(el, ctx, rwaId, win);
-  function setWindow(w) {
-    win = w;
-    redraw();
-  }
-  el.__setWindow = setWindow;
+  await render(el, ctx, params[0], "24h");
 }
 
 async function render(el, ctx, rwaId, win) {
@@ -40,12 +32,10 @@ async function render(el, ctx, rwaId, win) {
     ctx.setMode(d.dataMode);
     const a = d.asset;
     const s = d.snapshot;
-    const gapPts = h.points.map((p) => ({ t: p.measuredAt, y: p.maxSignedGapPct, sev: p.severity }));
-    const dispPts = h.points.map((p) => ({ t: p.measuredAt, y: p.dispersionPct, sev: p.severity }));
     const thr = d.thresholds;
 
     el.innerHTML = `
-      <button class="back" data-nav="radar">← radar</button>
+      <button class="back" data-nav="radar">← observation desk</button>
       <div class="card asset-cover">
         <p class="eyebrow">INVESTIGATION FILE / ${esc(a.symbol)} / CMC RWA ${a.rwaId}</p>
         <div class="card-head">
@@ -77,35 +67,10 @@ async function render(el, ctx, rwaId, win) {
         </details>
       </div>
 
-      <div class="card" style="margin-top:16px">
-        <div class="card-head">
-          <h2>Divergence history <span class="muted">· signed max-wrapper gap</span></h2>
-          <div class="win-tabs">${WINDOWS.map((w) => `<button class="win ${w === win ? "active" : ""}" data-win="${w}">${w}</button>`).join("")}</div>
-        </div>
-        ${lineChart(gapPts, {
-          thresholds: thr
-            ? [
-                { y: thr.info, label: "info", color: "#366ba4" },
-                { y: thr.watch, label: "watch", color: "#997215" },
-                { y: thr.high, label: "high", color: "#b94a25" },
-                { y: -thr.info, label: "", color: "#366ba4" },
-                { y: -thr.watch, label: "", color: "#997215" },
-                { y: -thr.high, label: "", color: "#b94a25" },
-              ]
-            : [],
-          yLabel: "gap %",
-        })}
-        <div class="card-head" style="margin-top:18px"><h2>Cross-wrapper dispersion</h2></div>
-        ${lineChart(dispPts, { color: "#997215", area: true, yLabel: "dispersion %" })}
-        <p class="muted" style="margin-top:8px">
-          ${h.stats.points} observations · peak |gap| ${h.stats.peakAbsGapPct?.toFixed(2) ?? "—"}%
-          ${h.stats.peakAt ? `at ${dateTime(h.stats.peakAt)}` : ""} ·
-          anomalous ${(h.stats.anomalousShare * 100).toFixed(0)}% of window ·
-          stale ${(h.stats.staleShare * 100).toFixed(0)}% · market-closed ${(h.stats.marketClosedShare * 100).toFixed(0)}%
-        </p>
-      </div>
-
-      <div class="detail-grid">
+      <div class="workspace-context"><span>Basis: wrapper / CMC tokenized aggregate</span><span>Source: CMC · ${esc(d.dataMode)}</span><span>Measured ${dateTime(s?.measuredAt)}</span><label>Selected wrapper <select id="asset-wrapper">${(s?.gaps ?? []).map((g) => `<option value="${esc(g.tokenSymbol)}">${esc(g.tokenSymbol)}</option>`).join("")}</select></label><span id="asset-wrapper-reading"></span></div>
+      <nav class="workspace-nav" role="tablist" aria-label="Investigation sections"><span class="workspace-identity"><strong>${esc(a.symbol)}</strong><span id="workspace-wrapper"></span><small>CMC aggregate basis<br>${esc(d.dataMode)} / CMC</small></span><button role="tab" id="tab-history" data-section="history" aria-controls="section-history">01 History</button><button role="tab" id="tab-comparison" data-section="comparison" aria-controls="section-comparison">02 Comparisons</button><button role="tab" id="tab-representations" data-section="representations" aria-controls="section-representations">03 Representations</button><button role="tab" id="tab-incidents" data-section="incidents" aria-controls="section-incidents">04 Incidents</button></nav>
+      <section id="section-history" class="workspace-section" role="tabpanel" aria-labelledby="tab-history">${historyPanel(h, thr, win)}
+      </section><section id="section-representations" class="workspace-section" role="tabpanel" aria-labelledby="tab-representations"><div class="detail-grid">
         <div class="card">
           <div class="card-head"><h2>Parity gaps vs tokenized aggregate</h2></div>
           ${gapsTable(s)}
@@ -117,13 +82,46 @@ async function render(el, ctx, rwaId, win) {
           ${repsBlock(d.representations)}
         </div>
       </div>
-      <section class="card" id="workbench" style="margin-top:16px" aria-label="Investigation Workbench"></section>
-      ${graphBlock(a, d.representations)}
-      ${eventsBlock(d.events)}
+      ${graphBlock(a, d.representations)}</section>
+      <section id="section-comparison" class="workspace-section" role="tabpanel" aria-labelledby="tab-comparison"><section class="card" id="workbench" aria-label="Investigation Workbench"></section></section>
+      <section id="section-incidents" class="workspace-section" role="tabpanel" aria-labelledby="tab-incidents">${eventsBlock(d.events) || '<div class="card empty">No retained incidents for this asset.</div>'}</section>
     `;
 
     await mountWorkbench($("#workbench", el), rwaId);
+    function selectSection(name, focus = false) {
+      $$("[data-section]", el).forEach((b) => {
+        b.setAttribute("aria-selected", String(b.dataset.section === name));
+        b.tabIndex = b.dataset.section === name ? 0 : -1;
+      });
+      $$(".workspace-section", el).forEach((s) => (s.hidden = s.id !== `section-${name}`));
+      if (focus) $(`[data-section="${name}"]`, el).focus();
+    }
+    $$("[data-section]", el).forEach((b, i, buttons) => {
+      b.addEventListener("click", () => selectSection(b.dataset.section));
+      b.addEventListener("keydown", (e) => {
+        if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(e.key)) return;
+        e.preventDefault();
+        const n =
+          e.key === "Home"
+            ? 0
+            : e.key === "End"
+              ? buttons.length - 1
+              : (i + (e.key === "ArrowLeft" ? -1 : 1) + buttons.length) % buttons.length;
+        selectSection(buttons[n].dataset.section, true);
+      });
+    });
+    selectSection("history");
+    const inspectWrapper = () => {
+      const g = s?.gaps.find((g) => g.tokenSymbol === $("#asset-wrapper", el).value);
+      $("#workspace-wrapper", el).textContent = g?.tokenSymbol ?? "No measurement";
+      $("#asset-wrapper-reading", el).textContent = g
+        ? `${g.tokenPrice} ${g.currency} · ${fmtPct(g.gapPct)} vs ${g.referencePrice} aggregate`
+        : "No comparable measurement";
+    };
+    $("#asset-wrapper", el).addEventListener("change", inspectWrapper);
+    inspectWrapper();
     $("#jump-workbench", el).addEventListener("click", () => {
+      selectSection("comparison");
       const target = $("#workbench", el);
       target.setAttribute("tabindex", "-1");
       target.focus({ preventScroll: true });
@@ -133,15 +131,46 @@ async function render(el, ctx, rwaId, win) {
       });
     });
     $("[data-nav]", el)?.addEventListener("click", (e) => ctx.navigate(e.target.dataset.nav));
-    $$("[data-win]", el).forEach((b) =>
-      b.addEventListener("click", () => {
-        el.__setWindow?.(b.dataset.win);
-      }),
-    );
-    $$("[data-event]", el).forEach((tr) =>
-      tr.addEventListener("click", () => ctx.navigate(`event/${tr.dataset.event}`)),
-    );
+    let historyRequest = 0;
+    $("#section-history", el).addEventListener("click", async (ev) => {
+      const button = ev.target.closest("[data-win]");
+      if (!button) return;
+      const request = ++historyRequest;
+      try {
+        const history = await api(`/api/v1/assets/${rwaId}/history?window=${button.dataset.win}`);
+        if (request !== historyRequest || !el.isConnected) return;
+        $$("[data-win]", el).forEach((b) => b.classList.toggle("active", b === button));
+        $("#section-history", el).innerHTML = historyPanel(history, thr, button.dataset.win);
+      } catch (err) {
+        let notice = $("#history-error", el);
+        if (!notice) {
+          notice = document.createElement("p");
+          notice.id = "history-error";
+          notice.setAttribute("role", "alert");
+          $("#section-history", el).prepend(notice);
+        }
+        notice.textContent = `History unavailable: ${err.message}. Previous window retained.`;
+      }
+    });
+    api("/api/v1/watchlist")
+      .then((wl) => {
+        const b = $("#watch-toggle", el);
+        b.disabled = wl.canMutate !== true;
+        if (b.disabled) {
+          b.textContent = d.watched ? "★ Watching · read only" : "Watchlist · read only";
+          b.title = "Shared watchlist changes require server-authorized access.";
+        }
+      })
+      .catch(() => {
+        const b = $("#watch-toggle", el);
+        b.disabled = true;
+        b.textContent = "Watchlist access unavailable";
+      });
+    $("#watch-toggle", el).disabled = true;
     $("#watch-toggle", el)?.addEventListener("click", async () => {
+      const button = $("#watch-toggle", el);
+      button.disabled = true;
+      button.textContent = "Saving…";
       try {
         if (d.watched) {
           await api(`/api/v1/watchlist/${a.rwaId}`, { method: "DELETE" });
@@ -152,14 +181,15 @@ async function render(el, ctx, rwaId, win) {
             body: JSON.stringify({ rwaId: a.rwaId }),
           });
         }
-        redraw();
+        d.watched = !d.watched;
+        button.textContent = d.watched ? "★ Watching · saved" : "☆ Watch · removed";
       } catch (err) {
-        alert(`watchlist: ${err.message}`);
+        button.textContent = "Watchlist save failed";
+        button.title = err.message;
+      } finally {
+        button.disabled = false;
       }
     });
-    function redraw() {
-      render(el, ctx, rwaId, win);
-    }
   } catch (e) {
     el.innerHTML = errorCard(e, true);
     $("[data-retry]", el)?.addEventListener("click", () => render(el, ctx, rwaId, win));
@@ -239,8 +269,40 @@ function eventsBlock(events) {
     ${events
       .map(
         (e) =>
-          `<tr data-event="${esc(e.eventId)}"><td class="mono">${esc(e.eventId)}</td><td>${esc(e.kind)}</td><td><span class="${sevClass(e.severity)}">${e.severity}</span></td><td><span class="state">${e.status}</span></td><td class="num">${e.maxDeviationPct.toFixed(2)}%</td><td class="num">${e.confirmations}</td><td class="muted">${ago(e.lastSeenAt)}</td></tr>`,
+          `<tr><td class="mono"><a href="#/event/${encodeURIComponent(e.eventId)}">${esc(e.eventId)}</a></td><td>${esc(e.kind)}</td><td><span class="${sevClass(e.severity)}">${e.severity}</span></td><td><span class="state">${e.status}</span></td><td class="num">${e.maxDeviationPct.toFixed(2)}%</td><td class="num">${e.confirmations}</td><td class="muted">${ago(e.lastSeenAt)}</td></tr>`,
       )
       .join("")}
   </tbody></table></div>`;
+}
+
+function historyPanel(h, thr, win) {
+  const gapPts = h.points.map((p) => ({ t: p.measuredAt, y: p.maxSignedGapPct, sev: p.severity }));
+  const dispPts = h.points.map((p) => ({ t: p.measuredAt, y: p.dispersionPct, sev: p.severity }));
+  return `<div class="card" id="history-panel" style="margin-top:16px">
+        <div class="card-head">
+          <h2>Divergence history <span class="muted">· signed max-wrapper gap</span></h2>
+          <div class="win-tabs">${WINDOWS.map((w) => `<button class="win ${w === win ? "active" : ""}" data-win="${w}">${w}</button>`).join("")}</div>
+        </div>
+        ${lineChart(gapPts, {
+          thresholds: thr
+            ? [
+                { y: thr.info, label: "info", color: "#366ba4" },
+                { y: thr.watch, label: "watch", color: "#997215" },
+                { y: thr.high, label: "high", color: "#b94a25" },
+                { y: -thr.info, label: "", color: "#366ba4" },
+                { y: -thr.watch, label: "", color: "#997215" },
+                { y: -thr.high, label: "", color: "#b94a25" },
+              ]
+            : [],
+          yLabel: "gap %",
+        })}
+        <div class="card-head" style="margin-top:18px"><h2>Cross-wrapper dispersion</h2></div>
+        ${lineChart(dispPts, { color: "#997215", area: true, yLabel: "dispersion %" })}
+        <p class="muted" style="margin-top:8px">
+          ${h.stats.points} observations · peak |gap| ${h.stats.peakAbsGapPct?.toFixed(2) ?? "—"}%
+          ${h.stats.peakAt ? `at ${dateTime(h.stats.peakAt)}` : ""} ·
+          anomalous ${(h.stats.anomalousShare * 100).toFixed(0)}% of window ·
+          stale ${(h.stats.staleShare * 100).toFixed(0)}% · market-closed ${(h.stats.marketClosedShare * 100).toFixed(0)}%
+        </p>
+      </div><details><summary>Exact history ledger · UTC / percent</summary><div class="table-scroll"><table class="table"><thead><tr><th>Time UTC</th><th>Signed gap %</th><th>Dispersion %</th><th>Freshness</th><th>Market</th></tr></thead><tbody>${h.points.map((p) => `<tr><td>${esc(p.measuredAt)}</td><td>${p.maxSignedGapPct ?? "absent"}</td><td>${p.dispersionPct ?? "absent"}</td><td>${esc(p.aggregateFreshness ?? "unknown")}</td><td>${esc(p.underlyingMarket ?? "unknown")}</td></tr>`).join("")}</tbody></table></div></details>`;
 }

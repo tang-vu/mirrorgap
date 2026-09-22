@@ -55,7 +55,7 @@ export async function mount(el, ctx, params) {
         </div>
         ${d.explanation ? `<div class="claim derived" style="margin-bottom:14px"><div class="claim-kind">${d.explanation.mode === "llm_assisted" ? "narrative (llm-assisted)" : "narrative"}</div><p><strong>${esc(d.explanation.headline)}</strong></p><p class="muted">${esc(d.explanation.narrative)}</p></div>` : ""}
         <dl class="kv">
-          <dt>Classification</dt><dd>${esc(e.classification)}</dd>
+          <dt>Current lifecycle</dt><dd>${esc(e.status)} · this status is separate from the selected historical frame</dd><dt>Classification</dt><dd>${esc(e.classification)}</dd>
           <dt>First seen</dt><dd>${dateTime(e.firstSeenAt)}</dd>
           <dt>Last seen</dt><dd>${dateTime(e.lastSeenAt)}</dd>
           <dt>Confirmations</dt><dd>${e.confirmations}</dd>
@@ -71,24 +71,27 @@ export async function mount(el, ctx, params) {
           <h2>Incident replay</h2>
           <div class="replay-controls">
             <button class="btn-sm" id="replay-play">▶ play</button>
-            <button class="btn-sm" id="replay-prev">‹</button>
+            <button class="btn-sm" id="replay-prev" aria-label="Previous frame">‹</button>
             <span id="replay-pos" class="muted mono">–</span>
-            <button class="btn-sm" id="replay-next">›</button>
+            <button class="btn-sm" id="replay-next" aria-label="Next frame">›</button>
           </div>
         </div>
         <div id="replay-chart">${lineChart(devPts, { yLabel: "deviation %" })}</div>
-        <div id="replay-frame" class="replay-frame muted">press play to step through the incident</div>
+        <div id="replay-frame" class="replay-frame muted" aria-live="polite">press play to step through the incident</div>
         <div class="timeline" id="timeline">
           ${tl
             .map(
-              (t, i) => `<div class="tl-item tl-${esc(t.type)}" data-i="${i}" tabindex="0">
-            <div class="tl-time mono">${clock(t.at)}</div>
+              (
+                t,
+                i,
+              ) => `<button type="button" class="tl-item tl-${esc(t.type)}" data-i="${i}" aria-pressed="false">
+            <div class="tl-time mono"><time datetime="${esc(t.at)}">${clock(t.at)}</time></div>
             <div class="tl-icon">${TYPE_ICON[t.type] ?? "·"}</div>
             <div class="tl-body">
               <div class="tl-title">${esc(t.title)} <span class="${sevClass(t.severity)}">${t.severity ?? ""}</span></div>
               ${t.detail ? `<div class="tl-detail muted">${esc(t.detail)}</div>` : ""}
             </div>
-          </div>`,
+          </button>`,
             )
             .join("")}
         </div>
@@ -108,9 +111,6 @@ export async function mount(el, ctx, params) {
 
     $("[data-nav]", el)?.addEventListener("click", (ev) => ctx.navigate(ev.target.dataset.nav));
     wireReplay(el, tl, devPts);
-    $$(".tl-item", el).forEach((n) =>
-      n.addEventListener("click", () => showFrame(el, tl, Number(n.dataset.i))),
-    );
   } catch (err) {
     el.innerHTML = errorCard(err, true);
     $("[data-retry]", el)?.addEventListener("click", () => mount(el, ctx, params));
@@ -119,37 +119,79 @@ export async function mount(el, ctx, params) {
 
 /* ---- replay ---- */
 function wireReplay(el, tl, devPts) {
-  let i = -1;
-  let timer = null;
+  let i = 0;
+  let timer;
+  const play = $("#replay-play", el);
   const stop = () => {
-    if (timer) clearInterval(timer);
+    clearInterval(timer);
     timer = null;
-    const b = $("#replay-play", el);
-    if (b) b.textContent = "▶ play";
+    play.textContent = "▶ play";
+    play.setAttribute("aria-pressed", "false");
   };
-  const step = (dir) => {
-    if (!$("#replay-frame", el)) return stop(); // view replaced mid-play
-    const next = Math.min(tl.length - 1, Math.max(0, i + dir));
-    showFrame(el, tl, next);
-    i = next;
+  const select = (n) => {
+    i = Math.max(0, Math.min(tl.length - 1, n));
+    showFrame(el, tl, i);
+    $("#replay-prev", el).disabled = i <= 0;
+    $("#replay-next", el).disabled = i >= tl.length - 1;
     if (i >= tl.length - 1) stop();
   };
-  $("#replay-play", el)?.addEventListener("click", () => {
+  play.disabled = !tl.length;
+  play.addEventListener("click", () => {
     if (timer) return stop();
-    if (i >= tl.length - 1) i = -1;
-    $("#replay-play", el).textContent = "⏸ pause";
-    step(1);
-    timer = setInterval(() => step(1), 900);
+    if (i >= tl.length - 1) select(0);
+    play.textContent = "Ⅱ pause";
+    play.setAttribute("aria-pressed", "true");
+    timer = setInterval(() => {
+      if (!el.isConnected || document.hidden) return stop();
+      select(i + 1);
+    }, 900);
   });
-  $("#replay-prev", el)?.addEventListener("click", () => step(-1));
-  $("#replay-next", el)?.addEventListener("click", () => step(1));
+  $("#replay-prev", el).addEventListener("click", () => {
+    stop();
+    select(i - 1);
+  });
+  $("#replay-next", el).addEventListener("click", () => {
+    stop();
+    select(i + 1);
+  });
+  $$(".tl-item", el).forEach((b) =>
+    b.addEventListener("click", () => {
+      stop();
+      select(Number(b.dataset.i));
+    }),
+  );
+  $("#timeline", el).addEventListener("keydown", (e) => {
+    if (!["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Home", "End"].includes(e.key)) return;
+    e.preventDefault();
+    stop();
+    select(
+      e.key === "Home"
+        ? 0
+        : e.key === "End"
+          ? tl.length - 1
+          : i + (["ArrowLeft", "ArrowUp"].includes(e.key) ? -1 : 1),
+    );
+    $(`.tl-item[data-i="${i}"]`, el)?.focus({ preventScroll: true });
+  });
+  const hidden = () => {
+    if (document.hidden) stop();
+  };
+  document.addEventListener("visibilitychange", hidden);
+  el.__cleanup = () => {
+    stop();
+    document.removeEventListener("visibilitychange", hidden);
+  };
+  select(0);
 }
 
 function showFrame(el, tl, i) {
   const t = tl[i];
   if (!t) return;
-  $$(".tl-item", el).forEach((n, j) => n.classList.toggle("tl-current", j === i));
-  tl[i] && $(`.tl-item[data-i="${i}"]`, el)?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+  $$(".tl-item", el).forEach((n, j) => {
+    n.classList.toggle("tl-current", j === i);
+    n.setAttribute("aria-pressed", String(j === i));
+  });
+
   const f = t.frame;
   const pos = $("#replay-pos", el);
   const frame = $("#replay-frame", el);
@@ -157,7 +199,7 @@ function showFrame(el, tl, i) {
   pos.textContent = `${i + 1}/${tl.length}`;
   frame.innerHTML = f
     ? `<div class="replay-grid">
-        <div><span class="muted">time</span> ${clock(t.at)}</div>
+        <div><span class="muted">time</span> ${dateTime(t.at)} · historical</div>
         <div><span class="muted">deviation</span> <strong>${t.deviationPct !== null && t.deviationPct !== undefined ? t.deviationPct.toFixed(2) + "%" : "—"}</strong></div>
         <div><span class="muted">reference</span> ${esc(f.referenceState ?? "?")}</div>
         <div><span class="muted">market</span> ${esc(f.underlyingMarket ?? "?")}</div>
@@ -166,9 +208,13 @@ function showFrame(el, tl, i) {
       </div>
       ${(f.gaps ?? []).length ? `<div class="replay-gaps">${f.gaps.map((g) => `<span class="mono">${esc(g.tokenSymbol)} ${g.gapPct >= 0 ? "+" : ""}${g.gapPct.toFixed(2)}%</span>`).join(" · ")}</div>` : ""}
       <div class="tl-detail" style="margin-top:6px">${esc(t.detail ?? t.title)}</div>`
-    : `<div class="tl-detail">${esc(t.detail ?? t.title)}</div>`;
+    : `<div class="tl-detail">${dateTime(t.at)} · historical lifecycle entry · no measurement frame<br>${esc(t.detail ?? t.title)}</div>`;
   // highlight the chart position
-  $$("#replay-chart circle", el).forEach((c) => c.setAttribute("r", "2.6"));
+  $$("#replay-chart circle", el).forEach((c) => {
+    const selected = c.dataset.time === t.at;
+    c.setAttribute("r", selected ? "6" : "2.6");
+    c.setAttribute("stroke", selected ? "var(--text)" : "none");
+  });
 }
 
 function claimsBlock(d) {

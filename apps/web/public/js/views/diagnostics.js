@@ -14,7 +14,8 @@ export async function mount(el, ctx) {
       const calls = (d.recent ?? []).slice(-25).reverse();
       const lastOk = calls.find((c2) => c2.outcome === "ok" || c2.httpStatus === 200);
       const lastErr = calls.find((c2) => c2.outcome !== "ok" && c2.httpStatus !== 200);
-      el.innerHTML = `
+      ctx.setCapability(d.capabilities);
+      el.innerHTML = `<header class="desk-intro"><div><p class="eyebrow">SOURCE OPERATIONS / PROVENANCE</p><h2>Know what you are observing.</h2><p class="muted">SSE is transport connectivity. Data mode, source availability and plan limits are separate capabilities.</p></div></header>
         <div class="detail-grid">
           <div class="card">
             <div class="card-head"><h2>Data source</h2><span class="badge badge-mode ${d.dataMode}">${d.dataMode}</span></div>
