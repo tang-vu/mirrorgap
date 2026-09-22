@@ -12,12 +12,12 @@
 - [ ] `pnpm mirrorgap scan --fixture` prints the anomaly table
 - [ ] `MIRRORGAP_SEED_TICKS=31 pnpm dev` (or `docker compose up --build`) → http://localhost:8787 loads seeded
 - [ ] Mode badge shows **fixture** (or **live** with `CMC_API_KEY`); fixture banner visible
-- [ ] Overview dashboard shows counters; radar renders blips; NVDA/TSLA show dispersion
+- [ ] Overview dashboard shows counters; registration bench renders selectable wrappers; NVDA/TSLA show dispersion
 - [ ] Click an asset → gaps, dispersion, wrappers, graph, history chart render
 - [ ] Open an event → claim ledger + receipt + `✓ verified`; timeline replay advances on play
-- [ ] Capsule view → `✓ VERIFIED`; tamper one char in the JSON → `✗ INVALID`
-- [ ] Watchlist add/remove works; diagnostics shows call log + alert config
-- [ ] `pnpm demo:check` prints `PASS`; `pnpm e2e` prints `PASS` (or skips w/o browser)
+- [ ] Capsule view → separate integrity / arithmetic / signature / attribution outcomes; tamper one char in the JSON → `✗ INVALID`
+- [ ] Watchlist has four labelled thresholds; public readers see read-only controls; diagnostics shows call log + alert config
+- [ ] `pnpm demo:check` prints `PASS`; `pnpm e2e` prints `PASS` with actual browser execution (a skip does not validate the UI)
 - [ ] `pnpm test` all green; `pnpm typecheck` clean; `pnpm format:check` clean
 - [ ] `mirrorgap receipt <id> --verify` → verified
 - [ ] No `CMC_API_KEY` committed anywhere (`git grep -i cmc_api_key` shows only `.env.example` placeholder)

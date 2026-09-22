@@ -5,6 +5,7 @@
 Use a dedicated fixture instance. In PowerShell, from the repo root:
 
 ```powershell
+$env:PORT = '18894'
 $env:MIRRORGAP_DATA_MODE = 'fixture'
 $env:MIRRORGAP_FIXTURE_SCENARIO = 'incident_cycle'
 $env:MIRRORGAP_SEED_TICKS = '31'
@@ -14,19 +15,19 @@ Set-Location apps/web
 node --import tsx src/server.ts
 ```
 
-Open http://localhost:8787. Keep the FIXTURE banner visible throughout. These are synthetic incident observations, not a discovered market event. Use the actual IDs returned by this instance; do not hardcode historical event IDs.
+Use a free port (the example uses 18894), then open http://localhost:18894. Keep the FIXTURE banner visible throughout. These are synthetic incident observations, not a discovered market event. Use the actual IDs returned by this instance; do not hardcode historical event IDs.
 
 ## 1. Ask a concrete question (30 seconds)
 
 “A wrapper differs from its peers. Is that a real underlying-price gap, a stale reference, or simply disagreement between wrappers? What can I prove?”
 
-Overview → Radar → NVDA. Show prices, issuer names, measured time and underlying-market heuristic. Explain that CMC's aggregate is a tokenized-market reference, not the stock-market price.
+Overview → select NVDA → inspect a registration mark → Investigate NVDA. The four retained-evidence chapters follow the same asset and wrapper; point out the distinct historical-frame and issuance-receipt times. Show prices, issuer names, measured time and underlying-market heuristic. Explain that CMC's aggregate is a tokenized-market reference, not the stock-market price.
 
 ## 2. Complete an investigation (75 seconds)
 
-On the asset page, open Investigation Workbench. Show each wrapper's gap versus the aggregate and versus the median of the _other_ wrappers. Explain that two wrappers cannot tell us which one is wrong, and even more wrappers share the same data provider.
+On the asset page, select Comparisons or Review the evidence to open Investigation Workbench. History, representations and direct incident links remain in adjacent tabs. Show each wrapper's gap versus the aggregate and versus the median of the _other_ wrappers. Explain that two wrappers cannot tell us which one is wrong, and even more wrappers share the same data provider.
 
-Read the disposition and next evidence steps. If the snapshot has aged, show the request to refresh; do not hide it. Demonstrate the underlying quote form using an explicitly synthetic price, source `Demo synthetic quote`, URL `https://example.com/quote`, an ISO timestamp and explicit units per token. First select **Live analyst quote** against this fixture: comparison must be **blocked** for data-mode mismatch. Change to **Synthetic fixture**. A closed/unknown underlying market or stale timestamp should still block it; this is expected. Automated unit tests cover an open-session indicative comparison at a pinned clock.
+Read the disposition and next evidence steps. If the snapshot has aged, show the request to refresh; do not hide it. Demonstrate the underlying quote form using an explicitly synthetic price, source `Demo synthetic quote`, URL `https://example.com/quote`, an ISO timestamp and explicit units per token. First select **Live analyst quote** against this fixture: comparison must be **blocked** for data-mode mismatch. Change to **Synthetic fixture**. A closed/unknown underlying market or stale timestamp should still block it; this is expected. The browser runner now also covers an accepted comparison at a pinned open-session clock; `pnpm demo:workbench` demonstrates the same domain policy.
 
 An accepted result is only indicative: the source and ratio are user supplied, and wrapper source timestamps are unavailable. Never describe this as authenticated cash-market parity.
 
@@ -40,11 +41,11 @@ The hash must match. Change a price in a copy; verification must fail. No server
 
 ## 3. Show incident evolution (45 seconds)
 
-Events → a confirmed or resolved incident → timeline. Play the recorded frames. Point out the claim kinds: observed, derived, supported hypothesis, unknown. The timeline is historical; confirmations are repeated observations, not independent source attestations.
+Events → a confirmed or resolved incident → timeline. Play the recorded frames, pause, select a frame and use ArrowRight/Home/End. Historical values and current lifecycle status are distinct. Point out the claim kinds: observed, derived, supported hypothesis, unknown. The timeline is historical; confirmations are repeated observations, not independent source attestations.
 
 ## 4. Prove more than a matching hash (75 seconds)
 
-Open the Evidence Capsule. Receipt measurements are frozen at issuance; lifecycle status can be newer. Click **Audit calculations**: expect AUDIT PASS on a newly generated receipt. This checks the hash plus gap/dispersion arithmetic and evidence links.
+Open the Evidence Capsule. Receipt measurements are frozen at issuance; lifecycle status can be newer. Show separate payload integrity, arithmetic, signature and source-attribution outcomes. Click **Audit calculations**: expect AUDIT PASS on a newly generated receipt. This checks the hash plus gap/dispersion arithmetic and evidence links.
 
 Edit a metric in the tamper JSON; click verify and audit to show failure. For the stronger demonstration, the automated `pnpm demo:workbench` flow deliberately alters a gap and recomputes the hash: ordinary integrity verification passes, but arithmetic audit fails. No claim of source authenticity follows from either check.
 
@@ -77,3 +78,7 @@ Closing: “MirrorGap turns a suspicious price difference into an inspectable in
 ## Rehearsal
 
 `pnpm demo:workbench` checks the deterministic review/export/audit story. `pnpm demo:check` checks HTTP. `pnpm e2e` exercises the browser including refusal and audit. See `upgrade-validation.md` for actual outcomes. Publishing a video and the required X post are separate submission tasks.
+
+## Optical observatory regression journey
+
+Run the explicit Edge command in `frontend-design.md`. The runner captures desktop/mobile overview, investigation, manual comparison, replay and capsule screens. It tests accepted and refused quotes, form retention when history changes, back/filter retention, exports, arithmetic and tamper rejection, read-only and unknown-capability controls, disconnected transport, source failures, missing data, reduced motion and responsive widths. Before/after captures and exact results are documented in `observatory-validation.md`.
