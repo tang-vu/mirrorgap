@@ -47,8 +47,8 @@ export function measureDispersion(tokens: TokenObservation[], currency: string):
   base.maxPrice = max.price;
   base.medianPrice = med;
   base.meanPrice = roundForHash(mean, 8);
-  base.minTokenSymbol = min.observationId.split(":").pop() ?? null;
-  base.maxTokenSymbol = max.observationId.split(":").pop() ?? null;
+  base.minTokenSymbol = min.tokenSymbol;
+  base.maxTokenSymbol = max.tokenSymbol;
 
   if (valid.length < 2 || med <= 0) return base;
 

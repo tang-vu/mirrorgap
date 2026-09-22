@@ -200,16 +200,34 @@ export function buildReceipt(input: BuildReceiptInput): EvidenceReceipt {
       issuerId: r.issuerId,
       issuerName: r.issuerName,
     })),
-    observations: input.observations.map((o) => ({
-      observationId: o.observationId,
-      kind: o.kind,
-      role: o.kind === "tokenized_aggregate" ? "reference" : o.kind === "token" ? "representation" : "market",
-      currency: o.currency,
-      price: "price" in o ? o.price : null,
-      observedAt: o.observedAt,
-      timestampSource: o.timestampSource,
-      detail: o.kind === "market_pair" ? { exchange: o.exchangeName, pair: o.pairSymbol } : undefined,
-    })),
+    observations: [
+      ...input.observations.map((o) => ({
+        observationId: o.observationId,
+        kind: o.kind,
+        role:
+          o.kind === "tokenized_aggregate" ? "reference" : o.kind === "token" ? "representation" : "market",
+        currency: o.currency,
+        price: "price" in o ? o.price : null,
+        observedAt: o.observedAt,
+        timestampSource: o.timestampSource,
+        detail:
+          o.kind === "market_pair"
+            ? { exchange: o.exchangeName, pair: o.pairSymbol }
+            : o.kind === "token"
+              ? { cryptoId: o.cryptoId, tokenSymbol: o.tokenSymbol }
+              : undefined,
+      })),
+      ...input.tradfiMarkets.map((m) => ({
+        observationId: `tradfi:${m.exchangeSlug}:${m.ticker}`,
+        kind: "tradfi_context",
+        role: "venue_context",
+        currency: "N/A",
+        price: null,
+        observedAt: input.now.toISOString(),
+        timestampSource: "retrieval",
+        detail: { exchange: m.exchangeName, ticker: m.ticker },
+      })),
+    ],
     metrics: {
       gaps: snapshot.gaps.map((g) => ({
         cryptoId: g.cryptoId,
@@ -297,7 +315,11 @@ export function verifyReceipt(raw: unknown): VerifyResult {
   if (!hashOk) errors.push("receipt hash mismatch — content was modified after issuance");
   let signatureOk: boolean | null = null;
   if (receipt.signature) {
-    signatureOk = hashOk && verifyReceiptSignature(receipt, receipt.signature);
+    try {
+      signatureOk = hashOk && verifyReceiptSignature(receipt, receipt.signature);
+    } catch {
+      signatureOk = false;
+    }
     if (!signatureOk) errors.push("ed25519 signature invalid");
   }
   return {

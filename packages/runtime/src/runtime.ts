@@ -23,6 +23,8 @@ import {
   buildIncidentTimeline,
   buildInvestigation,
   buildReceipt,
+  buildWorkbench,
+  type UnderlyingQuote,
   downsamplePoints,
   evaluateAsset,
   historyStats,
@@ -468,6 +470,22 @@ export class MirrorGapRuntime {
   }
 
   /** Radar summary: latest snapshot per watched asset. */
+  workbench(rwaId: number, underlying?: UnderlyingQuote, now = new Date()) {
+    const asset = this.store.getAsset(rwaId);
+    const snapshot = this.store.latestSnapshot(rwaId);
+    if (!asset || !snapshot) return null;
+    return buildWorkbench({
+      asset,
+      snapshot,
+      observations: this.store.getObservations(snapshot.observationIds),
+      representations: this.store.listRepresentations(rwaId),
+      dataMode: this.source.mode,
+      now,
+      maxAgeSeconds: this.config.agingSeconds,
+      ...(underlying ? { underlying } : {}),
+    });
+  }
+
   radar(): { asset: RwaAsset; snapshot: IntegritySnapshot }[] {
     return this.store
       .listAssets()

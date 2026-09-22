@@ -18,3 +18,5 @@ export * from "./history.js";
 export * from "./timeline.js";
 export * from "./capsule.js";
 export * from "./engine.js";
+export * from "./workbench.js";
+export * from "./audit.js";

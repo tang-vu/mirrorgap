@@ -90,7 +90,10 @@ export function buildInvestigation(input: {
         `(${fmt(g.tokenPrice)} vs ${fmt(g.referencePrice)} ${g.currency}).`,
       evidenceIds: input.reference ? [input.reference.observationId] : [],
       formulaId: FORMULA_PARITY_GAP,
-      inputs: [String(g.cryptoId), input.reference?.observationId ?? "no-reference"],
+      inputs: [
+        input.tokens.find((t) => t.cryptoId === g.cryptoId)!.observationId,
+        input.reference!.observationId,
+      ],
     });
   }
 
@@ -111,7 +114,7 @@ export function buildInvestigation(input: {
   claim({
     kind: "derived",
     statement:
-      `Severity ${event.severity.toUpperCase()}, classified as ${event.classification === "parity_gap" ? "a verified parity gap" : "a price difference (not a verified live parity gap)"}; ` +
+      `Severity ${event.severity.toUpperCase()}, classified as ${event.classification === "parity_gap" ? "a measured gap against the tokenized aggregate (not verified underlying parity)" : "a price difference (not verified underlying parity)"}; ` +
       `data quality ${snapshot.dataQuality.score.toFixed(2)} from ${snapshot.dataQuality.factors.length} transparent factors.`,
     evidenceIds: snapshot.observationIds,
     formulaId: FORMULA_DATA_QUALITY,
@@ -157,7 +160,7 @@ export function buildInvestigation(input: {
   // ---- UNKNOWN -------------------------------------------------------------
   const unknown = (statement: string) => claim({ kind: "unknown", statement, evidenceIds: [] });
 
-  if (input.tradfiMarkets.length > 0) {
+  {
     unknown(
       "The current TradFi reference price is not available from the observed dataset; " +
         "the tokenized aggregate is the strongest available reference.",

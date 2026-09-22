@@ -12,6 +12,7 @@ import { evaluateAsset } from "../src/engine.js";
 import { canonicalJson, roundForHash } from "../src/canonical.js";
 import type { AnomalyEvent } from "../src/domain/results.js";
 import { NOW, asset, refObs, tokObs } from "./helpers.js";
+import { auditReceipt } from "../src/audit.js";
 
 const T = { info: 0.25, watch: 0.5, high: 1.0, critical: 2.0 };
 
@@ -93,13 +94,45 @@ function fixture() {
     asset: a,
     representations: [],
     observations: [ref, ...tokens],
-    tradfiMarkets: [],
+    tradfiMarkets: [
+      { exchangeSlug: "binance", exchangeName: "Binance", exchangeId: 270, ticker: "NVDA", marketUrl: null },
+    ],
     now: NOW,
   });
   return { receipt, inv, anomaly };
 }
 
 describe("evidence receipts", () => {
+  it("recomputes arithmetic and rejects a wrong metric even after rehashing", () => {
+    const { receipt } = fixture();
+    expect(auditReceipt(receipt).ok).toBe(true);
+    receipt.metrics.gaps[0]!.gapPct = 900;
+    receipt.receiptHash = computeReceiptHash(receipt);
+    expect(verifyReceipt(receipt).ok).toBe(true);
+    expect(auditReceipt(receipt).arithmeticOk).toBe(false);
+  });
+  it("detects dangling evidence and falsified dispersion", () => {
+    const { receipt } = fixture();
+    receipt.claims[0]!.evidenceIds = ["missing"];
+    receipt.metrics.dispersion.dispersionPct = 0;
+    receipt.receiptHash = computeReceiptHash(receipt);
+    const a = auditReceipt(receipt);
+    expect(a.ok).toBe(false);
+    expect(a.checks.filter((c) => !c.ok).length).toBeGreaterThanOrEqual(2);
+  });
+  it("rejects a rehashed receipt that silently omits one wrapper comparison", () => {
+    const { receipt } = fixture();
+    receipt.metrics.gaps.pop();
+    receipt.calculationTrace.pop();
+    receipt.receiptHash = computeReceiptHash(receipt);
+    expect(auditReceipt(receipt).checks.find((c) => c.id === "gap:coverage")?.ok).toBe(false);
+  });
+  it("malformed public keys produce a failed verdict, not an exception", () => {
+    const { receipt } = fixture();
+    receipt.signature = { alg: "ed25519", publicKey: "not-a-key", signature: "bad" };
+    expect(verifyReceipt(receipt).ok).toBe(false);
+    expect(auditReceipt(null).ok).toBe(false);
+  });
   it("produces a schema-valid receipt with a sha256 hash", () => {
     const { receipt } = fixture();
     expect(receipt.schema).toBe("mirrorgap.receipt.v1");

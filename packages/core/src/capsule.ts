@@ -90,7 +90,7 @@ export function buildCapsule(input: {
       issuerName: r.issuerName,
     })),
     observed: {
-      divergencePct: event.latestDeviationPct,
+      divergencePct: receipt.event.latestDeviationPct,
       peakDeviationPct: event.maxDeviationPct,
       referenceState: receipt.freshness.referenceState,
       aggregateFreshness: receipt.freshness.aggregateState,
