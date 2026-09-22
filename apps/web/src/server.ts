@@ -7,6 +7,7 @@ import { createRuntime, seedHistory } from "@mirrorgap/runtime";
 import { createApiHandler, json } from "./api.js";
 
 const PORT = Number(process.env.PORT ?? process.env.MIRRORGAP_PORT ?? 8787);
+const HOST = process.env.MIRRORGAP_HOST ?? "0.0.0.0";
 const PUBLIC_DIR = fileURLToPath(new URL("../public", import.meta.url));
 
 const MIME: Record<string, string> = {
@@ -107,7 +108,7 @@ async function main(): Promise<void> {
     setInterval(tick, intervalMs).unref();
   }
 
-  server.listen(PORT, () => {
+  server.listen(PORT, HOST, () => {
     console.log(
       `MirrorGap observatory → http://localhost:${PORT}  (mode=${instance.config.dataMode}, scan=${instance.config.scanIntervalSeconds}s${runLoop ? "" : ", loop off"})`,
     );
