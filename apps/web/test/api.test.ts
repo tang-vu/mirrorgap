@@ -1,4 +1,5 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+import { randomUUID } from "node:crypto";
 import { createServer } from "node:http";
 import { createRuntime } from "@mirrorgap/runtime";
 import { createApiHandler } from "../src/api.js";
@@ -41,6 +42,57 @@ await post("/api/v1/scan");
 await post("/api/v1/scan");
 
 describe("HTTP API (fixture)", () => {
+  it("radar distinguishes measured zero from absent measurements", async () => {
+    const rows = inst.runtime.radar();
+    const measured = rows.find((r) => r.snapshot.gaps.length)!;
+    const absent = rows.find((r) => r.asset.rwaId !== measured.asset.rwaId)!;
+    const spy = vi.spyOn(inst.runtime, "radar").mockReturnValue([
+      {
+        ...measured,
+        snapshot: { ...measured.snapshot, gaps: measured.snapshot.gaps.map((g) => ({ ...g, gapPct: 0 })) },
+      },
+      { ...absent, snapshot: { ...absent.snapshot, gaps: [] } },
+    ]);
+    try {
+      const radar = await get("/api/v1/radar");
+      expect(radar.assets[0].maxAbsGapPct).toBe(0);
+      expect(radar.assets[1].maxAbsGapPct).toBeNull();
+      expect(radar.assets[0].gaps[0].currency).toBe("USD");
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it("watchlist capability is advisory, never exposes authorization, and preserves write guards", async () => {
+    expect((await get("/api/v1/watchlist")).canMutate).toBe(true);
+    const token = randomUUID();
+    const privateInst = createRuntime({
+      env: { MIRRORGAP_DATA_MODE: "fixture", MIRRORGAP_SCAN_TOKEN: token },
+      dbPath: ":memory:",
+    });
+    const privateHandler = createApiHandler(privateInst);
+    const privateServer = createServer(async (req, res) => {
+      await privateHandler(req, res);
+    });
+    await new Promise<void>((resolve) => privateServer.listen(0, "127.0.0.1", resolve));
+    const endpoint = `http://127.0.0.1:${(privateServer.address() as { port: number }).port}/api/v1/watchlist`;
+    try {
+      const result = (await (await fetch(endpoint)).json()) as { canMutate: boolean; dataMode: string };
+      expect(result.canMutate).toBe(false);
+      expect(result.dataMode).toBe("fixture");
+      expect(JSON.stringify(result)).not.toContain(token);
+      const rejected = await fetch(endpoint, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ symbol: "NVDA" }),
+      });
+      expect(rejected.status).toBe(403);
+      expect(((await rejected.json()) as { error: { code: string } }).error.code).toBe("scan_token_required");
+    } finally {
+      await new Promise<void>((resolve) => privateServer.close(() => resolve()));
+      privateInst.close();
+    }
+  });
   it("workbench exposes bounded evidence and validates underlying quotes", async () => {
     const r = await get("/api/v1/assets/2/workbench");
     expect(r.schema).toBe("mirrorgap.workbench.v1");

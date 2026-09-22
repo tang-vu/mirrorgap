@@ -415,7 +415,11 @@
         "tags": ["operate"],
         "summary": "List watchlist entries",
         "operationId": "listWatchlist",
-        "responses": { "200": { "description": "watchlist + limit" } }
+        "responses": {
+          "200": {
+            "description": "watchlist + limit + dataMode + canMutate (advisory browser capability; every write remains guarded)"
+          }
+        }
       },
       "post": {
         "tags": ["operate"],

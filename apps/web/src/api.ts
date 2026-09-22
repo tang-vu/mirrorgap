@@ -212,8 +212,11 @@ export function apiRoutes(instance: RuntimeInstance): Route[] {
           gapPct: g.gapPct,
           tokenPrice: g.tokenPrice,
           referencePrice: g.referencePrice,
+          currency: g.currency,
         })),
-        maxAbsGapPct: snapshot.gaps.reduce((m, g) => Math.max(m, Math.abs(g.gapPct)), 0) || null,
+        maxAbsGapPct: snapshot.gaps.length
+          ? snapshot.gaps.reduce((m, g) => Math.max(m, Math.abs(g.gapPct)), 0)
+          : null,
         dispersionPct: snapshot.dispersion.dispersionPct,
         wrapperCount: snapshot.dispersion.wrapperCount,
         dataQuality: snapshot.dataQuality.score,
@@ -376,8 +379,13 @@ export function apiRoutes(instance: RuntimeInstance): Route[] {
       });
     }),
 
-    route("GET", "/api/v1/watchlist", (_r, res) => {
+    route("GET", "/api/v1/watchlist", (req, res) => {
       json(res, 200, {
+        dataMode: config.dataMode,
+        // Advisory UI capability only. Every write still passes guardMutation.
+        canMutate:
+          !config.scanToken &&
+          ["127.0.0.1", "::1", "::ffff:127.0.0.1"].includes(req.socket.remoteAddress ?? ""),
         watchlist: runtime.listWatchlist(),
         limit: config.watchLimit,
       });
