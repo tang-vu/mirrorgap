@@ -2,6 +2,12 @@
 
 ## Before recording / judging
 
+- [ ] Follow the updated PowerShell setup and five-minute story in `demo-script.md`
+- [ ] `pnpm demo:workbench` passes; exported review verifies with `scripts/verify-review.mjs`
+- [ ] Workbench shows peer comparisons, missing evidence and an explicit data mode
+- [ ] Underlying comparison refuses mismatched mode/currency and missing unit mappings
+- [ ] Receipt arithmetic audit catches a wrong metric even when its hash is recomputed
+
 - [ ] `pnpm install` clean on a fresh checkout
 - [ ] `pnpm mirrorgap scan --fixture` prints the anomaly table
 - [ ] `MIRRORGAP_SEED_TICKS=31 pnpm dev` (or `docker compose up --build`) → http://localhost:8787 loads seeded
@@ -18,12 +24,18 @@
 
 ## Live mode (needs CMC_API_KEY)
 
+- [ ] Capture a real RWA response with `scripts/cmc-evidence.ts`; inspect ignored `data/cmc-live-evidence.json`
+- [ ] Record code + actual response; no fixture/docs example substituted for the live-call requirement
+
 - [ ] `mirrorgap doctor` shows plan + capabilities
 - [ ] `mirrorgap cmc-proof` prints `/v1/key/info` + call diagnostics
 - [ ] market-pairs badge shows correct capability state
 - [ ] one `mirrorgap scan` completes and persists events
 
 ## During the demo
+
+- [ ] Explain that CMC aggregate is not an independent underlying quote
+- [ ] Describe accepted manual underlying comparisons as indicative and unauthenticated
 
 - [ ] Show market-closed honesty (equities pre/post US hours → `price_difference`, not `parity_gap`)
 - [ ] Show the claim ledger labels — especially `supported_hypothesis` and `unknown`

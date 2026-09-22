@@ -8,11 +8,18 @@ MirrorGap is an autonomous observatory for tokenized real-world assets (RWAs). I
 
 The loop: **Observe → Detect → Investigate → Prove.**
 
+**New: Investigation Workbench.** Compare wrappers against their peers, challenge the
+CMC aggregate with an attributed underlying quote and explicit units per token,
+then export the evidence. User-supplied quotes remain indicative and unauthenticated.
+Audit receipts offline to recompute arithmetic as well as verify hashes.
+See [workbench guide](docs/workbench.md), [community winner research](docs/competitive-research.md)
+and [upgrade validation](docs/upgrade-validation.md).
+
 ---
 
 ## The problem
 
-A tokenized stock, commodity, or fund can exist as several wrappers (e.g. `NVDAX`, `NVDAon`). Each trades 24/7 on crypto venues while the underlying reference trades on TradFi hours. When a wrapper drifts from its reference — or wrappers disagree with each other — who notices? And when someone claims they noticed, who can _verify_ it? Today: nobody systematically.
+A tokenized stock, commodity, or fund can exist as several wrappers (e.g. `NVDAX`, `NVDAon`). Each can trade on crypto venues while the underlying follows different hours. An analyst needs to separate wrapper disagreement from a true underlying-price divergence, inspect the evidence and reproduce the comparison.
 
 ## What MirrorGap does
 
@@ -73,6 +80,9 @@ mirrorgap doctor                       # config, mode, capabilities, key info
 mirrorgap scan [--symbols NVDA,TSLA]   # one observation scan
 mirrorgap radar                        # integrity radar, ranked by divergence
 mirrorgap inspect NVDA                 # parity gaps, dispersion, freshness
+mirrorgap workbench NVDA               # peer review + evidence gaps, JSON output
+mirrorgap workbench NVDA --underlying quote.json # attributed underlying comparison
+mirrorgap audit --file capsule.json    # offline hash + arithmetic + evidence links
 mirrorgap history NVDA --window 7d     # time series + stats
 mirrorgap watch                        # continuous scan loop
 mirrorgap events [--status confirmed]  # anomaly lifecycle
@@ -151,7 +161,7 @@ packages/runtime   scan orchestration, lifecycle transitions, alerting,
                    history/timeline/capsule assembly, fixture seed replay
 apps/web           HTTP API + SSE + observatory UI (zero-build vanilla SPA)
 apps/cli           mirrorgap CLI (modular commands, --json everywhere)
-apps/mcp           MCP server over stdio (12 tools)
+apps/mcp           MCP server over stdio (14 tools)
 ```
 
 ## Verify it yourself
@@ -168,13 +178,15 @@ Tamper test: edit any number inside a stored receipt, then `--verify` → hash m
 
 ## What CMC made possible
 
-The RWA endpoints provide something no other crypto API exposes cleanly: the **tokenized aggregate** (`average_tokenized_price`) alongside each individual wrapper's price — the exact two-sided observation MirrorGap needs, plus TradFi exchange context for market-hours semantics and issuer identity for the wrapper graph.
+The RWA endpoints provide the **tokenized aggregate** (`average_tokenized_price`) alongside individual wrapper prices, TradFi exchange context and issuer identities. MirrorGap uses those observations for aggregate and peer comparisons. They are not two independent measurements of the underlying asset; an underlying comparison needs an additional attributed quote and explicit token-unit mapping.
 
 ## Honest boundaries
 
 - Market hours modeled for US equity venues (`us_regular_session_v1`); other venues → `unknown`
 - `market-pairs` requires Growth+ — detected, labeled, never faked
 - No price prediction, no trading signals, no arbitrage. This is an integrity observatory
+- CMC aggregate prices are not independent underlying prices. The optional underlying
+  comparator uses analyst-supplied quotes and unit ratios; no automatic cash-market feed exists yet
 - LLM (optional, off by default) can only re-word the deterministic claim ledger — never add claims
 
 ## License

@@ -34,9 +34,9 @@ more.
 - **Aggregate methodology is opaque.** `average_tokenized_price` — weighted
   how? By what venues? For parity verification the reference's construction
   matters; a documented method (or per-venue breakdown) would increase trust.
-- **Freshness SLAs undocumented.** How stale can `average_tokenized_price`
-  get when venues disagree? We ended up measuring it ourselves (freshness
-  states), but a documented update cadence would help.
+- **Source time versus update cadence.** The current official reference documents
+  a 60-second update frequency for `quotes/latest`. That does not establish each
+  wrapper's source time or synchronization. We still need per-wrapper timestamps.
 
 ## Wishlist (in priority order)
 
@@ -46,9 +46,11 @@ more.
 4. Market-pairs on Startup, or a degraded "venue count" field on quotes.
 5. Underlying TradFi price as a field (the true reference), not just venue links.
 
-## Bottom line
+## What the workbench adds
 
-The RWA family is the only crypto API we found that exposes _both sides_ of a
-tokenized asset in one response. MirrorGap exists because of that shape. The
-gaps that remain are about _explaining_ divergence (liquidity, history,
-methodology) rather than detecting it.
+The RWA shape makes wrapper and aggregate investigation possible. The workbench
+uses it for leave-one-out peer comparisons and evidence-linked reports, and
+separately accepts an analyst-supplied underlying quote with explicit conversion
+ratios. It never calls the tokenized aggregate an independent underlying price.
+An authenticated underlying quote and reliable conversion metadata remain the
+largest gaps for investigating actual token/underlying parity.

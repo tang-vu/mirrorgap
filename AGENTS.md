@@ -4,8 +4,8 @@
 
 - **Always commit AND push after every update.** Follow OSS conventions:
   small logical commits, conventional-commit style titles
-  (`feat(scope):`, `fix(scope):`, `docs:`), message explains *why* not just
-  *what*. Push to `origin main` once the working tree validates.
+  (`feat(scope):`, `fix(scope):`, `docs:`), message explains _why_ not just
+  _what_. Push to `origin main` once the working tree validates.
 - Before committing: `pnpm format`, `pnpm typecheck`, `pnpm test`.
 - Never commit `.env`, DB files, or secrets — CI secret-scans tracked files.
 

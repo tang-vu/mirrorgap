@@ -1,45 +1,17 @@
-# X/Twitter launch post — MirrorGap
+﻿# X launch draft (not published)
 
-## Primary post
+MirrorGap investigates tokenized-asset price gaps with CMC RWA data: compare wrappers, challenge the reference, and audit the evidence.
 
-Is tokenized reality still matching reality?
-
-Tokenized stocks trade 24/7. Their references don't. When a wrapper drifts — who checks whether that's a real divergence or just a closed market?
-
-I built MirrorGap for the #CoinMarketCap API Hackathon: an autonomous observatory that continuously verifies tokenized RWAs against their references and issues cryptographically verifiable evidence receipts.
-
-🔍 Parity gaps + cross-wrapper dispersion, detected deterministically
-🕐 Honest semantics — market_closed/stale references can't produce false alarms
-📜 Every anomaly ships a SHA-256 receipt anyone can re-hash and verify
-🤖 MCP-native — agents get real integrity tools, not just get_price
-
-Real World Assets track. Open source.
-
-DoraHacks: <dorahacks-url>
 Demo: <demo-video-url>
-Repo: <repo-url>
-
+Submission: <dorahacks-url>
 #BuildwithCMC
 
-## Thread (optional, for reach)
+## Optional follow-up
 
-1/
-A tokenized NVIDIA share can trade on Saturday. NVDA can't.
+CMC supplies wrapper identities, prices and the tokenized aggregate. The aggregate is not an independent underlying price. MirrorGap makes that boundary explicit, accepts attributed analyst quotes with unit mappings, and exports the inputs for review.
 
-So when the token moves and the stock didn't — is that price discovery or a broken peg? Today, nobody systematically answers that. That's the gap MirrorGap watches.
+A matching hash is not enough: MirrorGap also recalculates receipt arithmetic. The demo shows a modified metric with a newly valid hash still failing audit. Human UI, REST, CLI and MCP use the same deterministic core.
 
-2/
-The @CoinMarketCap RWA API is what made this possible — it's the only crypto API that returns BOTH sides in one call: the tokenized aggregate AND each individual wrapper (NVDAX, NVDAon) with issuer identity.
+Repo: https://github.com/tang-vu/mirrorgap
 
-3/
-The part I'm proudest of: honesty by construction. A stale or market-closed reference produces a "price difference," never a fake "verified parity failure." Every investigation claim is labeled observed/derived/hypothesis/unknown. The engine never invents causes.
-
-4/
-Every confirmed anomaly issues an evidence receipt: canonical JSON → SHA-256 → optional Ed25519 signature. Re-hash it yourself. Tamper with one digit — verification fails. Receipts, not vibes.
-
-5/
-Open source: <repo-url>
-DoraHacks submission: <dorahacks-url>
-Demo video: <demo-video-url>
-
-Built for the @CoinMarketCap API Hackathon — Real World Assets track. #BuildwithCMC
+Replace the submission/video placeholders only after those artifacts exist. No real market incident, real trade, user adoption or source authenticity is claimed by the fixture demo.

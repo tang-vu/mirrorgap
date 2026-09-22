@@ -5,11 +5,11 @@
 
 ## One-liner
 
-MirrorGap is an autonomous observatory that continuously verifies whether tokenized real-world assets still agree with the reality they claim to represent — and issues cryptographically verifiable evidence when they don't.
+MirrorGap investigates disagreement between tokenized real-world asset wrappers, tests attributed underlying-price comparisons, and exports evidence that people and AI agents can independently inspect and audit.
 
 ## The problem
 
-A tokenized stock or commodity can exist as several wrappers — `NVDAX`, `NVDAon` — trading 24/7 while the underlying reference keeps TradFi hours. When a wrapper drifts from its reference, or wrappers disagree with each other, nothing systematically detects, classifies, or proves it. Dashboards show prices; nobody checks _integrity_.
+A tokenized stock or commodity can exist as several wrappers — `NVDAX`, `NVDAon` — trading 24/7 while the underlying reference keeps TradFi hours. An analyst seeing a gap needs to determine which prices are being compared, whether timestamps and units align, and what evidence another reviewer can inspect.
 
 ## What MirrorGap does
 
@@ -24,28 +24,33 @@ Detected anomalies enter a lifecycle (candidate → confirmed → resolved/inval
 
 History is queryable per asset (deviation/dispersion/freshness series + stats), watchlists persist with per-asset thresholds, and lifecycle-aware alerts (webhook/Discord/Telegram) deduplicate repeats while re-alerting escalations.
 
-Delivered surfaces: a live observatory UI (dashboard, radar, asset history charts, incident timeline replay, capsule view, watchlist, diagnostics), a versioned REST API with SSE + OpenAPI spec, a modular CLI (16 commands, `--json` everywhere), and a 12-tool MCP server exposing the engine to agents. Ships with Dockerfile + compose for a one-command deploy.
+Delivered surfaces: an observatory UI (radar, workbench, history, timeline replay, capsule, watchlist, diagnostics), REST with SSE and OpenAPI, CLI and a 14-tool MCP server. Existing Docker packaging is included; this upgrade is validated with the commands in `docs/upgrade-validation.md`.
 
 ## Why CoinMarketCap
 
-The RWA endpoint family is the only crypto API exposing **both sides** of a tokenized asset in one response: the tokenized aggregate (`average_tokenized_price`) _and_ each individual wrapper's price/issuer — plus TradFi exchange context. That shape makes parity verification possible without stitching sources. `quotes/latest` powers the engine; `map`/`info`/`issuers` build the identity graph; `/v1/key/info` powers `cmc-proof` — auditable evidence of real API usage. Market-pairs (Growth+) is feature-detected and honestly labeled when plan-gated.
+The new **Investigation Workbench** adds leave-one-out peer comparisons, evidence-refresh guidance and optional underlying quotes with explicit unit mappings. It refuses incompatible comparisons. The same report is available through UI, REST, CLI and MCP. Receipt audit recalculates gaps and dispersion and checks evidence links: even a correctly rehashed wrong metric fails. See `docs/workbench.md` for the exact limits.
+
+CMC's RWA endpoints supply the tokenized aggregate (`average_tokenized_price`), individual wrapper prices/issuers and TradFi venue context. These are essential inputs to the investigation, not decorative price widgets. The aggregate is not an independent underlying quote. `quotes/latest` powers comparisons; `map`/`info` and wrapper issuer fields bind them to an RWA. Market-pairs is feature-detected and labelled when unavailable. `scripts/cmc-evidence.ts` captures a real validated RWA response when a key is configured, without exporting credentials.
 
 ## Proof it works
 
 - `pnpm demo:check` — boots the server, scans, verifies a receipt end-to-end (9 checks)
-- `pnpm e2e` — headless-Chrome smoke: every view, timeline replay, capsule verify, tamper flow (15 checks)
+- `pnpm e2e` — headless-Chrome smoke including workbench refusal, receipt audit, timeline replay and tamper flow
+- `pnpm demo:workbench` — repeatable open-session fixture, underlying comparison, independent export verification and rehashed-invalid receipt rejection
 - `mirrorgap cmc-proof` — prints `/v1/key/info` + every CMC call (endpoint, status, credits, latency), key redacted
 - `mirrorgap receipt <id> --verify` — independent hash verification; tamper any field → detected
 - Fixture mode needs no key and is visibly labeled everywhere; live mode is one env var away
-- 94 tests across the engine, adapter, store, runtime, API (19 HTTP cases), and MCP tools
+- Tests cover the engine, adapter, store, runtime, HTTP and MCP; see the validation report for actual counts
 - `docker compose up --build` — one-command deploy with a seeded incident history
 
 ## Links
 
-- Repo: <repository-url>
+- Repo: https://github.com/tang-vu/mirrorgap
 - Demo video: <demo-video-url>
 - Docs: `docs/cmc-api-usage.md` (endpoints + field mapping), `docs/cmc-api-feedback.md` (honest API feedback), `docs/demo-script.md`
 
 ## Honest boundaries
 
 Market hours modeled for US equity venues only (others → `unknown`). No trading signals, no arbitrage, no price prediction — this is an integrity layer, not a trading tool. Optional LLM narration can only re-word the deterministic claim ledger.
+
+Independent underlying quotes are analyst supplied, not automatically fetched or source authenticated. Receipt hashes verify integrity, not CMC authorship or issuer backing. Workbench agent policy is guidance to consumers, not an execution sandbox. See `docs/upgrade-validation.md` for actual test results and remaining submission artifacts; no deployment, demo-video publication or X post is implied by this draft.
