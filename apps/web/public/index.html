@@ -9,21 +9,23 @@
       content="Is tokenized reality still matching reality? MirrorGap watches tokenized real-world assets against their reference observations."
     />
     <link rel="stylesheet" href="/style.css" />
+    <link rel="stylesheet" href="/desk.css" />
     <link
       rel="icon"
-      href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><circle cx='16' cy='16' r='13' fill='none' stroke='%2344d7b6' stroke-width='2'/><circle cx='16' cy='16' r='5' fill='%2344d7b6'/></svg>"
+      href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><path d='M3 5h10v22H3zM19 5h10v22H19zM13 12h6m-6 8h6' fill='none' stroke='%23b94124' stroke-width='2.5'/></svg>"
     />
   </head>
   <body>
+    <a class="skip-link" href="#view">Skip to content</a>
     <header class="topbar">
       <a class="brand" href="#/overview">
         <svg viewBox="0 0 32 32" class="logo" aria-hidden="true">
-          <circle cx="16" cy="16" r="13" fill="none" stroke="currentColor" stroke-width="2" />
-          <circle cx="16" cy="16" r="5" fill="currentColor" />
+          <path d="M3 5h10v22H3zM19 5h10v22H19z" fill="none" stroke="currentColor" stroke-width="2.5" />
+          <path d="M13 12h6m-6 8h6" stroke="currentColor" stroke-width="2.5" />
         </svg>
         <div>
           <h1>MirrorGap</h1>
-          <p class="tagline">The market integrity layer for tokenized real-world assets</p>
+          <p class="tagline">TOKENIZED ASSETS / OBSERVABLE TRUTH</p>
         </div>
       </a>
       <div class="topbar-right">
@@ -44,7 +46,7 @@
         <input
           id="search"
           type="search"
-          placeholder="Search RWA… (NVDA, gold, TSLA)"
+          placeholder="Search assets…   /"
           autocomplete="off"
           aria-label="Search assets"
         />
@@ -53,11 +55,11 @@
     </nav>
 
     <div id="fixture-banner" class="fixture-banner hidden" role="note">
-      DEMO DATA — fixture mode is active. All observations are deterministic synthetic data; nothing on this
-      page is live market data.
+      <strong>DEMO ENVIRONMENT</strong>
+      <span>Deterministic synthetic observations. No live market data.</span>
     </div>
 
-    <main id="view" aria-live="polite"></main>
+    <main id="view" tabindex="-1" aria-live="polite"></main>
 
     <footer class="footer">
       <span>MirrorGap · CoinMarketCap API Hackathon · Real World Assets track</span>

@@ -133,7 +133,7 @@ try {
     );
     throw err;
   }
-  await page.waitForSelector("#view .card", { timeout: 15_000 });
+  await page.waitForSelector(".divergence-map", { timeout: 15_000 });
   check("overview mounts", (await cards()) > 0);
   // badge is populated by the view's data fetch — wait for it to resolve
   await page.waitForFunction(() => (document.querySelector("#mode-badge")?.textContent ?? "…") !== "…", {
@@ -142,15 +142,77 @@ try {
   check("fixture banner visible", (await text("#fixture-banner")).trim().length > 0);
   check("mode badge = fixture", /fixture/i.test(await text("#mode-badge")));
 
+  await page.screenshot({
+    path: fileURLToPath(new URL("overview-desktop.png", screenshotDir)),
+    fullPage: true,
+  });
+  await page.setViewport({ width: 390, height: 844 });
+  check(
+    "mobile overview has no page overflow",
+    await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth),
+  );
+  await page.screenshot({
+    path: fileURLToPath(new URL("overview-mobile.png", screenshotDir)),
+    fullPage: true,
+  });
+  await page.setViewport({ width: 1440, height: 900 });
+  await page.keyboard.press("/");
+  check(
+    "keyboard shortcut focuses asset search",
+    await page.$eval("#search", (el) => el === document.activeElement),
+  );
+  await page.keyboard.press("Escape");
   await goto("#/radar", "#radar-chart");
   check("radar renders assets", /NVDA|TSLA|GOLD/i.test(await text("#view")));
 
+  await page.type("#radar-filter", "NVDA");
+  check(
+    "radar filter narrows the register",
+    await page.$$eval(
+      "#asset-table tbody tr",
+      (rows) => rows.length > 0 && rows.every((r) => r.textContent.includes("NVDA")),
+    ),
+  );
+  await page.$eval("#radar-filter", (el) => {
+    el.value = "no-such-asset";
+    el.dispatchEvent(new Event("input"));
+  });
+  check("radar has an honest empty state", /No matching assets/.test(await text("#asset-table")));
+  await page.$eval("#radar-filter", (el) => {
+    el.value = "";
+    el.dispatchEvent(new Event("input"));
+  });
+  await page.select("#radar-sort", "symbol");
+  check(
+    "radar alphabetical sort",
+    await page.$$eval("#asset-table .asset-link", (links) => {
+      const values = links.map((a) => a.firstChild.textContent.trim());
+      return values.join() === [...values].sort((a, b) => a.localeCompare(b)).join();
+    }),
+  );
+  await page.screenshot({ path: fileURLToPath(new URL("radar-desktop.png", screenshotDir)), fullPage: true });
   await goto("#/asset/2", "#underlying-compare");
   check("workbench renders peer evidence", /Other-wrapper median/.test(await text("#workbench")));
   await page.screenshot({
     path: fileURLToPath(new URL("workbench-desktop.png", screenshotDir)),
     fullPage: true,
   });
+
+  await page.setViewport({ width: 390, height: 844 });
+  check(
+    "mobile investigation has no page overflow",
+    await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth),
+  );
+  await page.screenshot({
+    path: fileURLToPath(new URL("workbench-mobile.png", screenshotDir)),
+    fullPage: true,
+  });
+  await page.setViewport({ width: 1440, height: 900 });
+  await page.click("#jump-workbench");
+  check(
+    "investigation shortcut focuses evidence",
+    await page.$eval("#workbench", (el) => el === document.activeElement),
+  );
   await page.click("#workbench summary");
   await page.evaluate(() => {
     const form = document.querySelector("#underlying-compare");

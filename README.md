@@ -15,6 +15,10 @@ Audit receipts offline to recompute arithmetic as well as verify hashes.
 See [workbench guide](docs/workbench.md), [community winner research](docs/competitive-research.md)
 and [upgrade validation](docs/upgrade-validation.md).
 
+**Research desk UI:** signed wrapper divergence, a focused investigation panel,
+filterable observation register and responsive evidence review.
+See [design and browser validation](docs/frontend-design.md).
+
 ---
 
 ## The problem

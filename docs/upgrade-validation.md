@@ -14,20 +14,20 @@ Validated locally on Windows, Node 24.14.1 / pnpm 12.4.2, 22 September 2026.
 
 ## Checks
 
-| Check                          | Result                                                                                                              |
-| ------------------------------ | ------------------------------------------------------------------------------------------------------------------- |
-| `pnpm typecheck`               | Passed across all packages                                                                                          |
-| `pnpm test`                    | **107/107 passed**: core 56, CMC 14, storage 4, runtime 5, HTTP 20, MCP 8; CLI has no unit suite                    |
-| `pnpm build`                   | Passed all library/app TypeScript emit checks                                                                       |
-| `pnpm demo:check`              | 9/9 HTTP checks passed                                                                                              |
-| `pnpm demo:workbench`          | 7/7 deterministic end-to-end checks passed                                                                          |
-| Standalone review verification | Exported review verified without a server in the workbench demo                                                     |
-| Browser E2E                    | **Not passed:** Chrome and Edge document navigation timed out after 30/60 seconds, before the new UI assertions ran |
-| Live CMC capture               | Explicitly skipped: no `CMC_API_KEY` in process, app-local or root configuration                                    |
+| Check                          | Result                                                                                                            |
+| ------------------------------ | ----------------------------------------------------------------------------------------------------------------- |
+| `pnpm typecheck`               | Passed across all packages                                                                                        |
+| `pnpm test`                    | **107/107 passed**: core 56, CMC 14, storage 4, runtime 5, HTTP 20, MCP 8; CLI has no unit suite                  |
+| `pnpm build`                   | Passed all library/app TypeScript emit checks                                                                     |
+| `pnpm demo:check`              | 9/9 HTTP checks passed                                                                                            |
+| `pnpm demo:workbench`          | 7/7 deterministic end-to-end checks passed                                                                        |
+| Standalone review verification | Exported review verified without a server in the workbench demo                                                   |
+| Browser E2E                    | **Passed in the frontend follow-up:** complete browser flow, responsive checks, filtering and keyboard navigation |
+| Live CMC capture               | Explicitly skipped: no `CMC_API_KEY` in process, app-local or root configuration                                  |
 
 The synthetic demo pins an open session to 2026-09-18 15:00 UTC. It checks peer comparison, a unit-mapped indicative underlying comparison, live/fixture refusal, stale-review refusal, exported hash verification, a valid receipt audit, and an altered/rehashed metric rejected by audit. Files are in ignored `data/workbench-demo/`; they are not market observations or submission evidence of a real CMC call.
 
-Browser investigation: startup/seed and local HTTP checks passed. Direct requests returned `app.js` and `js/util.js` with HTTP 200. Browser diagnostics nevertheless showed pending document/module requests; a captured frame showed the static shell before application initialization. Chrome, Edge and separate ports reproduced the timeout. A trial of preloaded static assets did not fix it and was removed. Root cause is **not established**, so this is not labelled an application pass or conclusively an environment-only bug. New workbench/refusal/audit browser assertions are committed for rerun on a healthy browser runner. `MIRRORGAP_E2E_PORT` can isolate its port; `PUPPETEER_EXECUTABLE_PATH` chooses the browser. Failure screenshots are in ignored `data/e2e/`.
+Browser follow-up during the frontend design update: the same local Chrome runner successfully completed the full flow, including the workbench, refusal, audit and tamper assertions. The prior navigation timeouts did not recur; their original cause remains unestablished. Desktop and 390 px mobile screenshots were inspected. See [frontend design and reproduction](frontend-design.md). `MIRRORGAP_E2E_PORT` isolates the port; `PUPPETEER_EXECUTABLE_PATH` chooses the browser. Screenshots are in ignored `data/e2e/`.
 
 ## Local benchmark
 

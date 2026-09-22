@@ -13,7 +13,7 @@ const views = {
   capsule: () => import("./js/views/capsule.js"),
 };
 
-const TABS = ["overview", "radar", "events", "watchlist", "diagnostics", "about"];
+let routeVersion = 0;
 let currentView = "";
 let mounted = false;
 
@@ -39,7 +39,8 @@ async function route() {
   const parts = location.hash.replace(/^#\/?/, "").split("/").filter(Boolean);
   const view = parts[0] && views[parts[0]] ? parts[0] : "overview";
   const params = parts.slice(1).map(decodeURIComponent);
-  const reload = view === currentView && mounted; // re-entering same view still re-mounts (fresh data)
+  const version = ++routeVersion;
+  const changed = view !== currentView;
   currentView = view;
   $$(".tab").forEach((t) =>
     t.classList.toggle(
@@ -50,18 +51,32 @@ async function route() {
     ),
   );
   const el = $("#view");
-  el.innerHTML = `<div class="card"><p class="muted">loading…</p></div>`;
+  if (changed || !mounted)
+    el.innerHTML = `<div class="loading-state" role="status">READING THE EVIDENCE…</div>`;
   try {
     const mod = await views[view]();
-    await mod.mount(el, ctx, params);
+    const surface = document.createElement("div");
+    await mod.mount(surface, ctx, params);
+    if (version !== routeVersion) return;
+    el.replaceChildren(surface);
     mounted = true;
+    document.title = `MirrorGap — ${view.charAt(0).toUpperCase() + view.slice(1)}`;
+    $$(".tab").forEach((t) =>
+      t.setAttribute("aria-current", t.classList.contains("active") ? "page" : "false"),
+    );
+    if (changed) window.scrollTo({ top: 0, behavior: "instant" });
   } catch (err) {
-    el.innerHTML = `<div class="card"><p class="verify-bad">${esc(err.message ?? err)}</p></div>`;
+    if (version === routeVersion)
+      el.innerHTML = `<div class="card"><p class="verify-bad">${esc(err.message ?? err)}</p></div>`;
   }
 }
 
 $$(".tab").forEach((t) => t.addEventListener("click", () => ctx.navigate(t.dataset.view)));
 window.addEventListener("hashchange", route);
+$(".skip-link").addEventListener("click", (e) => {
+  e.preventDefault();
+  $("#view").focus();
+});
 
 /* ---------------- search ---------------- */
 let searchTimer;
@@ -72,12 +87,13 @@ $("#search").addEventListener("input", (e) => {
   searchTimer = setTimeout(async () => {
     try {
       const d = await api(`/api/v1/assets?q=${encodeURIComponent(q)}`);
+      if ($("#search").value.trim() !== q) return;
       const box = $("#search-results");
       box.innerHTML =
         (d.assets ?? [])
           .map(
             (a) =>
-              `<div class="sr-item" data-rwa="${a.rwaId}"><span class="sr-sym">${esc(a.symbol)}</span><span class="sr-name">${esc(a.name)}</span></div>`,
+              `<button type="button" class="sr-item" data-rwa="${a.rwaId}"><span class="sr-sym">${esc(a.symbol)}</span><span class="sr-name">${esc(a.name)}</span></button>`,
           )
           .join("") || `<div class="sr-item"><span class="sr-name">no matches</span></div>`;
       box.classList.remove("hidden");
@@ -100,20 +116,45 @@ document.addEventListener("click", (e) => {
 /* ---------------- live stream ---------------- */
 function connectStream() {
   const es = new EventSource("/api/v1/stream");
-  es.onopen = () => $("#live-dot").classList.add("on");
-  es.onerror = () => $("#live-dot").classList.remove("on");
+  const streamStatus = (connected) => {
+    const dot = $("#live-dot");
+    dot.classList.toggle("on", connected);
+    dot.title = connected ? "Observation stream connected" : "Observation stream disconnected";
+    dot.setAttribute("aria-label", dot.title);
+  };
+  es.onopen = () => streamStatus(true);
+  es.onerror = () => streamStatus(false);
   const refreshViews = new Set(["overview", "radar", "events", "diagnostics"]);
   for (const type of ["snapshot", "event", "scan_finished"]) {
     es.addEventListener(type, () => {
-      if (refreshViews.has(currentView)) route();
+      if (refreshViews.has(currentView) && !isInteracting()) route();
     });
   }
 }
 
 /* ---------------- boot ---------------- */
-if (!location.hash) location.hash = "#/overview";
+if (!location.hash) history.replaceState(null, "", "#/overview");
 route();
 connectStream();
 setInterval(() => {
-  if (["overview", "radar"].includes(currentView)) route();
+  if (["overview", "radar"].includes(currentView) && !isInteracting()) route();
 }, 30_000);
+
+// Preserve an active filter or keyboard interaction during background refreshes.
+function isInteracting() {
+  return (
+    document.activeElement?.matches("input, select, textarea, button, a") ||
+    Boolean($("#radar-filter")?.value) ||
+    $("#radar-sort")?.value === "symbol"
+  );
+}
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape") {
+    $("#search-results").classList.add("hidden");
+    $("#search").blur();
+  }
+  if (e.key === "/" && !e.ctrlKey && !e.metaKey && !e.target.matches("input, textarea, select")) {
+    e.preventDefault();
+    $("#search").focus();
+  }
+});

@@ -46,15 +46,23 @@ async function render(el, ctx, rwaId, win) {
 
     el.innerHTML = `
       <button class="back" data-nav="radar">← radar</button>
-      <div class="card">
+      <div class="card asset-cover">
+        <p class="eyebrow">INVESTIGATION FILE / ${esc(a.symbol)} / CMC RWA ${a.rwaId}</p>
         <div class="card-head">
-          <h2>${esc(a.name)} <span class="muted">${esc(a.symbol)} · rwa_id ${a.rwaId}</span></h2>
+          <h2>${esc(a.name)}</h2>
           <div>
             <span class="badge badge-mode ${d.dataMode}">${d.dataMode}</span>
             ${s ? `<span class="${sevClass(s.severity)}">${s.severity}</span>` : ""}
             <button class="btn-sm" id="watch-toggle">${d.watched ? "★ watching" : "☆ watch"}</button>
           </div>
         </div>
+        <div class="asset-readings">
+          <div><span class="stat-label">Maximum aggregate gap</span><strong>${s?.gaps.length ? fmt(Math.max(...s.gaps.map((g) => Math.abs(g.gapPct))), 2) + "<small>%</small>" : "—"}</strong></div>
+          <div><span class="stat-label">Wrapper dispersion</span><strong>${s?.dispersion.dispersionPct != null ? fmt(s.dispersion.dispersionPct, 2) + "<small>%</small>" : "—"}</strong></div>
+          <div><span class="stat-label">Reference freshness</span><strong class="reading-state">${esc(s?.reference.aggregateFreshness.state ?? "unavailable")}</strong><span class="muted">Underlying market: ${esc(s?.reference.underlyingMarket ?? "unknown")}</span></div>
+          <button class="btn-sm btn-accent" id="jump-workbench">Review the evidence ↗</button>
+        </div>
+        <details class="asset-context"><summary>Reference context &amp; observation quality</summary>
         <dl class="kv">
           <dt>Asset type</dt><dd>${esc(a.assetType)}</dd>
           <dt>Primary exchange</dt><dd>${esc(a.primaryExchange ?? "unknown")}</dd>
@@ -66,6 +74,7 @@ async function render(el, ctx, rwaId, win) {
           <dt>Classification</dt><dd>${s?.classification ? esc(s.classification) : "—"}</dd>
         </dl>
         ${s ? `<p class="muted" style="margin-top:10px">${s.reference.explanations.map(esc).join(" ")}</p>` : ""}
+        </details>
       </div>
 
       <div class="card" style="margin-top:16px">
@@ -76,18 +85,18 @@ async function render(el, ctx, rwaId, win) {
         ${lineChart(gapPts, {
           thresholds: thr
             ? [
-                { y: thr.info, label: "info", color: "#5b9dff" },
-                { y: thr.watch, label: "watch", color: "#f5c453" },
-                { y: thr.high, label: "high", color: "#f5853f" },
-                { y: -thr.info, label: "", color: "#5b9dff" },
-                { y: -thr.watch, label: "", color: "#f5c453" },
-                { y: -thr.high, label: "", color: "#f5853f" },
+                { y: thr.info, label: "info", color: "#366ba4" },
+                { y: thr.watch, label: "watch", color: "#997215" },
+                { y: thr.high, label: "high", color: "#b94a25" },
+                { y: -thr.info, label: "", color: "#366ba4" },
+                { y: -thr.watch, label: "", color: "#997215" },
+                { y: -thr.high, label: "", color: "#b94a25" },
               ]
             : [],
           yLabel: "gap %",
         })}
         <div class="card-head" style="margin-top:18px"><h2>Cross-wrapper dispersion</h2></div>
-        ${lineChart(dispPts, { color: "#f5c453", area: true, yLabel: "dispersion %" })}
+        ${lineChart(dispPts, { color: "#997215", area: true, yLabel: "dispersion %" })}
         <p class="muted" style="margin-top:8px">
           ${h.stats.points} observations · peak |gap| ${h.stats.peakAbsGapPct?.toFixed(2) ?? "—"}%
           ${h.stats.peakAt ? `at ${dateTime(h.stats.peakAt)}` : ""} ·
@@ -114,6 +123,15 @@ async function render(el, ctx, rwaId, win) {
     `;
 
     await mountWorkbench($("#workbench", el), rwaId);
+    $("#jump-workbench", el).addEventListener("click", () => {
+      const target = $("#workbench", el);
+      target.setAttribute("tabindex", "-1");
+      target.focus({ preventScroll: true });
+      target.scrollIntoView({
+        behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "instant" : "smooth",
+        block: "start",
+      });
+    });
     $("[data-nav]", el)?.addEventListener("click", (e) => ctx.navigate(e.target.dataset.nav));
     $$("[data-win]", el).forEach((b) =>
       b.addEventListener("click", () => {
@@ -192,12 +210,12 @@ function graphBlock(asset, reps) {
     yW = 140,
     yI = 230;
   const n = reps.length;
-  let nodes = `<g><circle cx="${cx}" cy="${yA}" r="22" fill="#44d7b6"/><text class="node-label" x="${cx}" y="${yA - 30}" text-anchor="middle">${esc(asset.symbol)}</text></g>`;
+  let nodes = `<g><circle cx="${cx}" cy="${yA}" r="22" fill="#c54b2b"/><text class="node-label" x="${cx}" y="${yA - 30}" text-anchor="middle">${esc(asset.symbol)}</text></g>`;
   const issuers = new Map();
   reps.forEach((r, i) => {
     const x = cx + (i - (n - 1) / 2) * 170;
     nodes += `<line class="edge" x1="${cx}" y1="${yA + 22}" x2="${x}" y2="${yW - 18}"/>`;
-    nodes += `<g><rect x="${x - 46}" y="${yW - 18}" width="92" height="36" rx="8" fill="#1a2030" stroke="#232b3d"/>
+    nodes += `<g><rect x="${x - 46}" y="${yW - 18}" width="92" height="36" rx="8" fill="#f0f1e9" stroke="#deded5"/>
       <text class="node-label" x="${x}" y="${yW + 4}" text-anchor="middle">${esc(r.symbol)}</text></g>`;
     if (r.issuerName) {
       if (!issuers.has(r.issuerName)) issuers.set(r.issuerName, []);
@@ -208,7 +226,7 @@ function graphBlock(asset, reps) {
   for (const [name, xs] of issuers) {
     const x = xs.reduce((a, b) => a + b, 0) / xs.length + (ix++ - (issuers.size - 1) / 2) * 10;
     for (const wx of xs) nodes += `<line class="edge" x1="${wx}" y1="${yW + 18}" x2="${x}" y2="${yI - 16}"/>`;
-    nodes += `<text class="node-label" x="${x}" y="${yI}" text-anchor="middle" fill="#8b95ab">${esc(name)}</text>`;
+    nodes += `<text class="node-label" x="${x}" y="${yI}" text-anchor="middle" fill="#697166">${esc(name)}</text>`;
   }
   return `<div class="card" style="margin-top:16px"><div class="card-head"><h2>Representation graph</h2></div>
     <svg class="graph-svg" viewBox="0 0 ${W} ${H}">${nodes}</svg></div>`;

@@ -45,11 +45,11 @@ export async function api(path, opts) {
 
 export const SEV_ORDER = { critical: 4, high: 3, watch: 2, info: 1, none: 0 };
 export const SEV_COLOR = {
-  none: "#3ddc97",
-  info: "#5b9dff",
-  watch: "#f5c453",
-  high: "#f5853f",
-  critical: "#f5564e",
+  none: "#347158",
+  info: "#366ba4",
+  watch: "#997215",
+  high: "#b94a25",
+  critical: "#b63336",
 };
 
 export function errorCard(err, retry) {
