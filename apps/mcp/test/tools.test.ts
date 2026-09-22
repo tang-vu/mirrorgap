@@ -15,6 +15,14 @@ const call = async (name: string, args: Record<string, unknown> = {}) => {
 };
 
 describe("MCP tools (fixture)", () => {
+  it("workbench and offline audit are available to agents with explicit limits", async () => {
+    await call("mirrorgap_scan");
+    const r = await call("mirrorgap_workbench", { rwaId: 2 });
+    expect(r["dataMode"]).toBe("fixture");
+    expect((r["agentPolicy"] as { mayExecuteTrade: boolean }).mayExecuteTrade).toBe(false);
+    await expect(call("mirrorgap_workbench", { rwaId: -1 })).rejects.toThrow();
+    expect((await call("mirrorgap_audit_receipt", { receipt: {} }))["ok"]).toBe(false);
+  });
   it("exposes domain tools beyond price lookups", () => {
     const names = tools.map((t) => t.name);
     expect(names).toContain("mirrorgap_scan");

@@ -25,6 +25,7 @@ export async function mount(el, ctx, params) {
             <button class="btn-sm" id="cap-copy-link">copy permalink</button>
             <button class="btn-sm" id="cap-download">download JSON</button>
             <button class="btn-sm" id="cap-raw">raw receipt</button>
+            <button class="btn-sm" id="cap-audit">Audit calculations</button>
           </div>
         </div>
 
@@ -37,6 +38,8 @@ export async function mount(el, ctx, params) {
           <span class="badge badge-mode ${cap.dataMode}">${cap.dataMode === "live" ? "CMC LIVE" : "FIXTURE"}</span>
         </div>
 
+        <section id="audit-result" aria-live="polite"></section>
+        <p class="muted">Receipt measurements describe the issuance snapshot. Lifecycle status below may have advanced since issuance. Hash verification does not authenticate upstream data.</p>
         <div class="capsule-grid">
           <section>
             <h3>Incident</h3>
@@ -131,6 +134,26 @@ export async function mount(el, ctx, params) {
     });
     $("#cap-raw", el)?.addEventListener("click", () => $("#cap-raw-section", el)?.classList.toggle("hidden"));
     const canonical = JSON.stringify(cap.receipt, null, 2);
+    $("#cap-audit", el)?.addEventListener("click", async () => {
+      const out = $("#audit-result", el);
+      try {
+        const receipt = JSON.parse($("#tamper-json", el).value);
+        const result = await api("/api/v1/receipts/audit", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify(receipt),
+        });
+        out.innerHTML = `<h3>${result.ok ? "AUDIT PASS" : "AUDIT FAIL"}</h3>
+          <p>Hash ${result.integrity.hashOk ? "matches" : "fails"} · calculations ${result.arithmeticOk ? "consistent" : "inconsistent"}</p>
+          <ul>${result.checks
+            .filter((c) => !c.ok)
+            .map((c) => `<li>${esc(c.id)}: ${esc(c.detail)}</li>`)
+            .join("")}</ul>
+          <p class="muted">${result.limitations.map(esc).join(" ")}</p>`;
+      } catch (err) {
+        out.textContent = `Audit failed: ${err.message}`;
+      }
+    });
     $("#tamper-reset", el)?.addEventListener("click", () => {
       $("#tamper-json", el).value = canonical;
       $("#tamper-result", el).textContent = "";

@@ -1,8 +1,37 @@
-import { verifyReceipt } from "@mirrorgap/core";
+import { verifyReceipt, auditReceipt, UnderlyingQuoteSchema } from "@mirrorgap/core";
 import { c, fmtPct } from "../format.js";
 import { argFlag, has, makeRuntime } from "./context.js";
 
 /* ---------------- receipt ---------------- */
+export async function audit(args: string[]) {
+  const file = argFlag(args, "file");
+  if (!file) throw new Error("audit requires --file receipt.json (or an exported capsule)");
+  const { readFileSync } = await import("node:fs");
+  const raw = JSON.parse(readFileSync(file, "utf8"));
+  const result = auditReceipt(raw?.receipt ?? raw);
+  console.log(JSON.stringify(result, null, 2));
+  if (!result.ok) process.exitCode = 1;
+}
+
+export async function workbench(args: string[]) {
+  const inst = makeRuntime(args);
+  try {
+    const target = args[1] ?? "";
+    const asset = /^\d+$/.test(target)
+      ? inst.runtime.store.getAsset(Number(target))
+      : inst.runtime.store.findAssetBySymbol(target);
+    if (!asset) throw new Error("Unknown asset; run a scan first");
+    const file = argFlag(args, "underlying");
+    const { readFileSync } = await import("node:fs");
+    const quote = file ? UnderlyingQuoteSchema.parse(JSON.parse(readFileSync(file, "utf8"))) : undefined;
+    const report = inst.runtime.workbench(asset.rwaId, quote);
+    if (!report) throw new Error("Asset has no snapshot; run a scan first");
+    console.log(JSON.stringify(report, null, 2));
+  } finally {
+    inst.close();
+  }
+}
+
 export async function receipt(args: string[]) {
   const id = args[1];
   if (!id) {

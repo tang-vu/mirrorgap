@@ -29,6 +29,7 @@ const env = {
   ...process.env,
   PORT: String(PORT),
   MIRRORGAP_DATA_MODE: "fixture",
+  MIRRORGAP_DB_PATH: ":memory:",
   MIRRORGAP_FIXTURE_SCENARIO: "incident_cycle",
   MIRRORGAP_SEED_TICKS: String(SEED),
   MIRRORGAP_CONFIRM_SCANS: "1",

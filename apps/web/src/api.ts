@@ -1,7 +1,14 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 import type { RuntimeInstance } from "@mirrorgap/runtime";
 import { CmcError } from "@mirrorgap/cmc";
-import { verifyReceipt, HISTORY_WINDOWS, type HistoryWindow, type Thresholds } from "@mirrorgap/core";
+import {
+  verifyReceipt,
+  auditReceipt,
+  UnderlyingQuoteSchema,
+  HISTORY_WINDOWS,
+  type HistoryWindow,
+  type Thresholds,
+} from "@mirrorgap/core";
 
 type Params = Record<string, string>;
 type Handler = (req: IncomingMessage, res: ServerResponse, params: Params) => void | Promise<void>;
@@ -245,6 +252,38 @@ export function apiRoutes(instance: RuntimeInstance): Route[] {
       });
     }),
 
+    route("GET", "/api/v1/assets/:rwaId/workbench", (_req, res, p) => {
+      const id = Number(p["rwaId"]);
+      if (!Number.isSafeInteger(id) || id <= 0)
+        return fail(res, 400, "bad_id", "rwaId must be a positive integer");
+      const report = runtime.workbench(id);
+      if (!report) return fail(res, 404, "not_found", "asset has no snapshot; run a scan first");
+      json(res, 200, report);
+    }),
+
+    route("POST", "/api/v1/assets/:rwaId/compare", async (req, res, p) => {
+      if (rateLimited(req, res)) return;
+      const id = Number(p["rwaId"]);
+      if (!Number.isSafeInteger(id) || id <= 0)
+        return fail(res, 400, "bad_id", "rwaId must be a positive integer");
+      const parsed = UnderlyingQuoteSchema.safeParse(await readJsonBody(req));
+      if (!parsed.success)
+        return fail(
+          res,
+          400,
+          "bad_quote",
+          "Quote requires asset, positive price, currency, unit, timestamp, source, clean HTTPS URL, dataMode and unique wrapper unit mappings",
+        );
+      const report = runtime.workbench(id, parsed.data);
+      if (!report) return fail(res, 404, "not_found", "asset has no snapshot; run a scan first");
+      json(res, 200, report);
+    }),
+
+    route("POST", "/api/v1/receipts/audit", async (req, res) => {
+      if (rateLimited(req, res)) return;
+      json(res, 200, auditReceipt(await readJsonBody(req)));
+    }),
+
     route("GET", "/api/v1/assets/:rwaId/history", (req, res, p) => {
       const rwaId = Number(p["rwaId"]);
       if (!Number.isInteger(rwaId)) return fail(res, 400, "bad_id", "rwaId must be an integer");
@@ -464,6 +503,10 @@ export function createApiHandler(instance: RuntimeInstance) {
         await r.handler(req, res, params);
       } catch (err) {
         if (!res.headersSent) {
+          if (err instanceof BodyError) {
+            bodyFail(res, err);
+            return true;
+          }
           fail(res, 500, "internal", err instanceof Error ? err.message : String(err));
         }
       }

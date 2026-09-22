@@ -15,6 +15,119 @@
     { "name": "operate", "description": "Watchlist, alerts, diagnostics, stream" }
   ],
   "paths": {
+    "/api/v1/assets/{rwaId}/workbench": {
+      "get": {
+        "tags": ["investigate"],
+        "summary": "Snapshot-bound peer review, evidence gaps and agent policy",
+        "operationId": "workbench",
+        "parameters": [
+          { "name": "rwaId", "in": "path", "required": true, "schema": { "type": "integer", "minimum": 1 } }
+        ],
+        "responses": {
+          "200": {
+            "description": "Review with dataMode, snapshotId, observations, wrappers, blockers, agentPolicy and reportHash"
+          },
+          "400": { "description": "Invalid id" },
+          "404": { "description": "No asset snapshot" }
+        }
+      }
+    },
+    "/api/v1/assets/{rwaId}/compare": {
+      "post": {
+        "tags": ["investigate"],
+        "summary": "Read-only comparison with an attributed analyst-supplied underlying quote",
+        "description": "No persistence or URL fetching. 64 KiB cap and 30 requests/min/IP. No scan token. Blocked comparisons return null gaps; accepted comparisons remain indicative, not authenticated.",
+        "operationId": "compareUnderlying",
+        "parameters": [
+          { "name": "rwaId", "in": "path", "required": true, "schema": { "type": "integer", "minimum": 1 } }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "rwaId",
+                  "price",
+                  "currency",
+                  "unit",
+                  "observedAt",
+                  "source",
+                  "sourceUrl",
+                  "dataMode",
+                  "mappings"
+                ],
+                "properties": {
+                  "rwaId": { "type": "integer", "minimum": 1 },
+                  "price": { "type": "number", "exclusiveMinimum": 0 },
+                  "currency": { "type": "string", "pattern": "^[A-Z]{3}$" },
+                  "unit": { "type": "string", "minLength": 1, "maxLength": 80 },
+                  "observedAt": { "type": "string", "format": "date-time" },
+                  "source": { "type": "string", "minLength": 1, "maxLength": 160 },
+                  "sourceUrl": {
+                    "type": "string",
+                    "format": "uri",
+                    "maxLength": 500,
+                    "description": "HTTPS without credentials, query or fragment"
+                  },
+                  "dataMode": { "type": "string", "enum": ["fixture", "live"] },
+                  "mappings": {
+                    "type": "array",
+                    "minItems": 1,
+                    "maxItems": 250,
+                    "description": "Unique cryptoIds required",
+                    "items": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": ["cryptoId", "underlyingUnitsPerToken"],
+                      "properties": {
+                        "cryptoId": { "type": "integer", "minimum": 1 },
+                        "underlyingUnitsPerToken": {
+                          "type": "number",
+                          "exclusiveMinimum": 0,
+                          "maximum": 1000000000000
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Workbench report including underlying quote, attributed comparison results and refusal reasons"
+          },
+          "400": { "description": "Invalid id, body or quote" },
+          "404": { "description": "No asset snapshot" },
+          "413": { "description": "Body too large" },
+          "429": { "description": "Rate limited" }
+        }
+      }
+    },
+    "/api/v1/receipts/audit": {
+      "post": {
+        "tags": ["prove"],
+        "operationId": "auditReceipt",
+        "summary": "Verify receipt integrity and recompute arithmetic and evidence links",
+        "description": "Read-only, no scan token. Audit does not authenticate source data or claim semantics.",
+        "requestBody": {
+          "required": true,
+          "content": { "application/json": { "schema": { "type": "object" } } }
+        },
+        "responses": {
+          "200": {
+            "description": "Audit verdict, dataMode, integrity, arithmeticOk, checks and limitations; invalid receipts return ok=false"
+          },
+          "400": { "description": "Malformed JSON" },
+          "413": { "description": "Body too large" },
+          "429": { "description": "Rate limited" }
+        }
+      }
+    },
     "/api/v1/health": {
       "get": {
         "tags": ["meta"],

@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { HISTORY_WINDOWS } from "@mirrorgap/core";
+import { HISTORY_WINDOWS, UnderlyingQuoteSchema, auditReceipt } from "@mirrorgap/core";
 import type { RuntimeInstance } from "@mirrorgap/runtime";
 
 /**
@@ -18,6 +18,33 @@ export interface ToolDef {
 export function buildTools(instance: RuntimeInstance): ToolDef[] {
   const { runtime, config } = instance;
   return [
+    {
+      name: "mirrorgap_workbench",
+      description:
+        "Review stored CMC RWA evidence without scanning: peer comparisons, evidence gaps, next steps and explicit agent policy. Optional analyst-supplied underlying quote uses explicit unit mappings; it is not source-authenticated. Never treat the CMC aggregate as the underlying price or execute trades from this report.",
+      inputSchema: {
+        rwaId: z.number().int().positive(),
+        underlying: z.record(z.string(), z.unknown()).optional(),
+      },
+      handler: async (args) => {
+        const rwaId = z.number().int().positive().parse(args["rwaId"]);
+        const underlying =
+          args["underlying"] === undefined ? undefined : UnderlyingQuoteSchema.parse(args["underlying"]);
+        return (
+          runtime.workbench(rwaId, underlying) ?? {
+            error: "asset has no snapshot; run mirrorgap_scan first",
+            dataMode: config.dataMode,
+          }
+        );
+      },
+    },
+    {
+      name: "mirrorgap_audit_receipt",
+      description:
+        "Check receipt integrity AND recompute gap/dispersion arithmetic and evidence links. A matching hash alone does not establish correct calculations or authentic source data.",
+      inputSchema: { receipt: z.record(z.string(), z.unknown()) },
+      handler: async (args) => auditReceipt(args["receipt"]),
+    },
     {
       name: "mirrorgap_scan",
       description:

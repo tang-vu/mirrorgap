@@ -20,6 +20,7 @@
     "mirrorgap": "pnpm -F @mirrorgap/cli mirrorgap",
     "mcp": "pnpm -F @mirrorgap/mcp start",
     "demo:check": "node scripts/demo-check.mjs",
+    "demo:workbench": "pnpm -F @mirrorgap/web exec tsx ../../scripts/workbench-check.ts",
     "bench": "node scripts/benchmark.mjs",
     "e2e": "node scripts/e2e-smoke.mjs"
   },

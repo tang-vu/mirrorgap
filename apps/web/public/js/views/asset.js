@@ -15,6 +15,7 @@ import {
   SEV_COLOR,
 } from "../util.js";
 import { lineChart } from "../charts.js";
+import { mountWorkbench } from "../workbench.js";
 
 const WINDOWS = ["1h", "6h", "24h", "7d", "all"];
 
@@ -107,10 +108,12 @@ async function render(el, ctx, rwaId, win) {
           ${repsBlock(d.representations)}
         </div>
       </div>
+      <section class="card" id="workbench" style="margin-top:16px" aria-label="Investigation Workbench"></section>
       ${graphBlock(a, d.representations)}
       ${eventsBlock(d.events)}
     `;
 
+    await mountWorkbench($("#workbench", el), rwaId);
     $("[data-nav]", el)?.addEventListener("click", (e) => ctx.navigate(e.target.dataset.nav));
     $$("[data-win]", el).forEach((b) =>
       b.addEventListener("click", () => {

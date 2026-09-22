@@ -41,6 +41,36 @@ await post("/api/v1/scan");
 await post("/api/v1/scan");
 
 describe("HTTP API (fixture)", () => {
+  it("workbench exposes bounded evidence and validates underlying quotes", async () => {
+    const r = await get("/api/v1/assets/2/workbench");
+    expect(r.schema).toBe("mirrorgap.workbench.v1");
+    expect(r.dataMode).toBe("fixture");
+    expect(r.agentPolicy.mayExecuteTrade).toBe(false);
+    expect(r.evidence.length).toBeGreaterThan(0);
+    expect((await getRaw("/api/v1/assets/no/workbench")).status).toBe(400);
+    expect((await getRaw("/api/v1/assets/99999/workbench")).status).toBe(404);
+    expect((await post("/api/v1/assets/2/compare", { price: 12 })).error.code).toBe("bad_quote");
+    const compared = await post("/api/v1/assets/2/compare", {
+      rwaId: 2,
+      price: 100,
+      currency: "USD",
+      unit: "share",
+      observedAt: new Date().toISOString(),
+      source: "Test input",
+      sourceUrl: "https://example.com/quote",
+      dataMode: "live",
+      mappings: r.wrappers.map((w: { cryptoId: number }) => ({
+        cryptoId: w.cryptoId,
+        underlyingUnitsPerToken: 1,
+      })),
+    });
+    expect(
+      compared.underlying.comparisons.every((c: { reasons: string[] }) =>
+        c.reasons.includes("data_mode_mismatch"),
+      ),
+    ).toBe(true);
+    expect((await post("/api/v1/receipts/audit", {})).ok).toBe(false);
+  });
   it("health reports mode + capabilities", async () => {
     const h = await get("/api/v1/health");
     expect(h.status).toBe("ok");

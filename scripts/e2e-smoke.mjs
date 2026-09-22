@@ -14,14 +14,14 @@
  * without a browser still passes.
  */
 import { spawn } from "node:child_process";
-import { existsSync } from "node:fs";
+import { existsSync, mkdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
 // Spawn the server directly (not via pnpm) so child.kill() reaches the actual
 // node process — on Windows a pnpm/cmd wrapper leaves the server orphaned.
 const WEB_DIR = fileURLToPath(new URL("../apps/web", import.meta.url));
 
-const PORT = 8793;
+const PORT = Number(process.env.MIRRORGAP_E2E_PORT ?? 8793);
 const base = `http://127.0.0.1:${PORT}`;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -47,6 +47,7 @@ const check = (name, ok, detail = "") => {
 };
 
 let puppeteer;
+console.log("e2e-smoke: loading browser driver");
 try {
   puppeteer = (await import("puppeteer-core")).default;
 } catch {
@@ -62,12 +63,17 @@ if (!puppeteer || !executablePath) {
 
 let child;
 let browser;
+let page;
+const screenshotDir = new URL("../data/e2e/", import.meta.url);
+mkdirSync(screenshotDir, { recursive: true });
+console.log("e2e-smoke: starting isolated fixture server");
 try {
   child = spawn(process.execPath, ["--import", "tsx", "src/server.ts"], {
     env: {
       ...process.env,
       PORT: String(PORT),
       MIRRORGAP_DATA_MODE: "fixture",
+      MIRRORGAP_DB_PATH: ":memory:",
       MIRRORGAP_FIXTURE_SCENARIO: "incident_cycle",
       MIRRORGAP_SEED_TICKS: "31",
       MIRRORGAP_CONFIRM_SCANS: "1",
@@ -91,9 +97,14 @@ try {
     headless: true,
     args: ["--no-sandbox", "--disable-gpu", "--window-size=1440,900"],
   });
-  const page = await browser.newPage();
+  page = await browser.newPage();
+  page.setDefaultNavigationTimeout(60000);
   await page.setViewport({ width: 1440, height: 900 });
   const consoleErrors = [];
+  const pendingRequests = new Set();
+  page.on("request", (r) => pendingRequests.add(r.url()));
+  page.on("requestfinished", (r) => pendingRequests.delete(r.url()));
+  page.on("requestfailed", (r) => pendingRequests.delete(r.url()));
   page.on("console", (m) => m.type() === "error" && consoleErrors.push(m.text()));
   page.on("pageerror", (e) => consoleErrors.push(String(e)));
 
@@ -107,7 +118,21 @@ try {
   const text = (sel) => page.$eval(sel, (el) => el.textContent ?? "");
   const cards = () => page.$$eval("#view .card", (els) => els.length);
 
-  await page.goto(base + "/", { waitUntil: "domcontentloaded" });
+  try {
+    await page.goto(base + "/", { waitUntil: "domcontentloaded" });
+  } catch (err) {
+    console.log("Pending local requests:", [...pendingRequests].filter((u) => u.startsWith(base)).join(", "));
+    console.log(
+      "Browser state:",
+      await page
+        .evaluate(() => ({
+          readyState: document.readyState,
+          resources: performance.getEntriesByType("resource").map((r) => r.name),
+        }))
+        .catch(() => "unavailable"),
+    );
+    throw err;
+  }
   await page.waitForSelector("#view .card", { timeout: 15_000 });
   check("overview mounts", (await cards()) > 0);
   // badge is populated by the view's data fetch — wait for it to resolve
@@ -119,6 +144,38 @@ try {
 
   await goto("#/radar", "#radar-chart");
   check("radar renders assets", /NVDA|TSLA|GOLD/i.test(await text("#view")));
+
+  await goto("#/asset/2", "#underlying-compare");
+  check("workbench renders peer evidence", /Other-wrapper median/.test(await text("#workbench")));
+  await page.screenshot({
+    path: fileURLToPath(new URL("workbench-desktop.png", screenshotDir)),
+    fullPage: true,
+  });
+  await page.click("#workbench summary");
+  await page.evaluate(() => {
+    const form = document.querySelector("#underlying-compare");
+    const fields = {
+      price: "100",
+      currency: "USD",
+      unit: "share",
+      observedAt: new Date().toISOString(),
+      source: "Browser test synthetic input",
+      sourceUrl: "https://example.com/quote",
+      dataMode: "live",
+    };
+    for (const [name, value] of Object.entries(fields)) form.elements.namedItem(name).value = value;
+    form.querySelectorAll('[name^="units-"]').forEach((e) => {
+      e.value = "1";
+    });
+    form.requestSubmit();
+  });
+  await page.waitForFunction(() =>
+    document.querySelector("#underlying-result")?.textContent.includes("data_mode_mismatch"),
+  );
+  check(
+    "workbench rejects live quote against fixture evidence",
+    /blocked/.test(await text("#underlying-result")),
+  );
 
   const events = await (await fetch(base + "/api/v1/events")).json();
   const eventId = events.events?.[0]?.eventId;
@@ -140,6 +197,9 @@ try {
   await goto(`#/capsule/${eventId}`, "#tamper-verify");
   const cap = await text("#view");
   check("capsule renders + verifies", /VERIFIED|verified/i.test(cap));
+  await page.click("#cap-audit");
+  await page.waitForFunction(() => document.querySelector("#audit-result")?.textContent.includes("AUDIT"));
+  check("receipt arithmetic audit passes", /AUDIT PASS/.test(await text("#audit-result")));
 
   // tamper: corrupt the receipt symbol, then verify → must fail
   await page.evaluate(() => {
@@ -172,6 +232,7 @@ try {
   );
 } catch (err) {
   check("fatal", false, err.message);
+  await page?.screenshot({ path: fileURLToPath(new URL("failure.png", screenshotDir)) }).catch(() => {});
 } finally {
   await browser?.close().catch(() => {});
   child?.kill("SIGTERM");

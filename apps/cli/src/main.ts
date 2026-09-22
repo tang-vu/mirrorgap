@@ -4,7 +4,7 @@ import { doctor, stats, alerts, cmcProof } from "./commands/observe.js";
 import { scanCmd, radar, watch } from "./commands/scan.js";
 import { inspect, history } from "./commands/inspect.js";
 import { events, eventDetail, timeline } from "./commands/events.js";
-import { receipt, capsule } from "./commands/evidence.js";
+import { receipt, capsule, audit, workbench } from "./commands/evidence.js";
 import { watchlist } from "./commands/watchlist.js";
 import { seed, serve } from "./commands/demo.js";
 
@@ -21,6 +21,7 @@ Observe
   watch [--interval N]        Continuous scan loop, prints anomalies
 
 Investigate
+  workbench <symbol|rwa_id>   Evidence review [--underlying quote.json], JSON output
   inspect <symbol|rwa_id>     Deep look at one asset's parity + dispersion
   history <symbol|rwa_id>     Divergence/dispersion/staleness time series
                              [--window 1h|6h|24h|7d|all]
@@ -29,6 +30,7 @@ Investigate
   timeline <id>               Incident replay narrative
 
 Prove
+  audit --file receipt.json  Offline hash, arithmetic and evidence-link audit
   capsule <eventId>           Evidence Capsule (shareable, --out file to export)
   receipt <eventId>           Show an evidence receipt
   receipt <eventId> --verify  Re-hash + verify schema, hash, signature
@@ -55,6 +57,10 @@ async function main(): Promise<void> {
   }
 
   switch (cmd) {
+    case "workbench":
+      return workbench(args);
+    case "audit":
+      return audit(args);
     case "doctor":
       return doctor(args);
     case "scan":
