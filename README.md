@@ -4,6 +4,8 @@
 
 **[Open the demo](https://mirrorgap.tangvu.dev)** — the public demo uses clearly labeled synthetic fixture data.
 
+See the [live CMC API call and reviewed response excerpt](docs/cmc-live-evidence.md) for separate evidence of the real RWA integration.
+
 MirrorGap is an autonomous observatory for tokenized real-world assets (RWAs). It continuously compares tokenized asset representations against the best available reference observations, detects meaningful parity gaps and cross-wrapper disagreement, investigates anomalies deterministically, tracks each incident's lifecycle over time, and issues **verifiable, machine-readable evidence** — receipts and capsules that anyone can re-hash and check.
 
 **Track:** Real World Assets · **Data:** CoinMarketCap API · **Stack:** TypeScript monorepo, SQLite, vanilla UI, REST + SSE, CLI, MCP

@@ -14,16 +14,16 @@ Validated locally on Windows, Node 24.14.1 / pnpm 12.4.2, 22 September 2026.
 
 ## Checks
 
-| Check                          | Result                                                                                                            |
-| ------------------------------ | ----------------------------------------------------------------------------------------------------------------- |
-| `pnpm typecheck`               | Passed across all packages                                                                                        |
-| `pnpm test`                    | **107/107 passed**: core 56, CMC 14, storage 4, runtime 5, HTTP 20, MCP 8; CLI has no unit suite                  |
-| `pnpm build`                   | Passed all library/app TypeScript emit checks                                                                     |
-| `pnpm demo:check`              | 9/9 HTTP checks passed                                                                                            |
-| `pnpm demo:workbench`          | 7/7 deterministic end-to-end checks passed                                                                        |
-| Standalone review verification | Exported review verified without a server in the workbench demo                                                   |
-| Browser E2E                    | **Passed in the frontend follow-up:** complete browser flow, responsive checks, filtering and keyboard navigation |
-| Live CMC capture               | Explicitly skipped: no `CMC_API_KEY` in process, app-local or root configuration                                  |
+| Check                          | Result                                                                                                                             |
+| ------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------- |
+| `pnpm typecheck`               | Passed across all packages                                                                                                         |
+| `pnpm test`                    | **107/107 passed**: core 56, CMC 14, storage 4, runtime 5, HTTP 20, MCP 8; CLI has no unit suite                                   |
+| `pnpm build`                   | Passed all library/app TypeScript emit checks                                                                                      |
+| `pnpm demo:check`              | 9/9 HTTP checks passed                                                                                                             |
+| `pnpm demo:workbench`          | 7/7 deterministic end-to-end checks passed                                                                                         |
+| Standalone review verification | Exported review verified without a server in the workbench demo                                                                    |
+| Browser E2E                    | **Passed in the frontend follow-up:** complete browser flow, responsive checks, filtering and keyboard navigation                  |
+| Live CMC capture               | Completed 23 September 2026: validated NVDA `quotes/latest` response, HTTP 200, 1 credit; [reviewed excerpt](cmc-live-evidence.md) |
 
 The synthetic demo pins an open session to 2026-09-18 15:00 UTC. It checks peer comparison, a unit-mapped indicative underlying comparison, live/fixture refusal, stale-review refusal, exported hash verification, a valid receipt audit, and an altered/rehashed metric rejected by audit. Files are in ignored `data/workbench-demo/`; they are not market observations or submission evidence of a real CMC call.
 
@@ -47,10 +47,10 @@ The first attempt timed out waiting for server startup. A separate rerun complet
 
 ## Remaining limits and submission tasks
 
-1. Capture a real RWA call with `scripts/cmc-evidence.ts` once a valid local key is available. The script exports only validated market response/provenance, not request credentials. Review that artifact before publishing it.
+1. The real RWA call is captured and a reviewed excerpt is public. The local full capture remains ignored; show the code and excerpt during judging.
 2. Supply a licensed, authenticated underlying feed and trustworthy unit/corporate-action mappings for autonomous underlying-parity monitoring. Today the optional quote is manual and remains indicative.
 3. Confirm RWA-specific scoring in DoraHacks Tracks; direct access returned HTTP 405. General official criteria and the user-supplied Details text informed prioritization.
 4. Record/publish the demo video, fill the submission/video placeholders and post the required X link. These have not been performed.
 5. Hash/signature checks do not authenticate CMC source truth or issuer backing. An embedded public key needs a separate trusted identity channel. Old receipts missing evidence context may pass integrity while failing the stricter audit; they are never silently rewritten.
 6. Market-hours logic is still a US-session heuristic, not a complete holiday/early-close calendar. Per-wrapper source timestamps, executable liquidity and redemption evidence remain unavailable.
-7. No production deployment, user study, live anomaly, trading execution, product adoption or contest ranking is asserted.
+7. The public deployment uses fixture data. No user study, live anomaly, trading execution, product adoption or contest ranking is asserted.

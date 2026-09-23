@@ -71,7 +71,7 @@ Only when an actual CMC key is configured locally, run from apps/web:
 node --import tsx ../../scripts/cmc-evidence.ts
 ```
 
-This captures a validated actual `quotes/latest` response to ignored `data/cmc-live-evidence.json`, including endpoint, params, retrieval time and credits. Show relevant response fields alongside `packages/cmc/src/normalize.ts`. The script explicitly skips without a key. Never substitute docs examples or fixture outputs for real-call evidence. The upgrade session had no configured key, so a live capture remains required before submission.
+This captures a validated actual `quotes/latest` response to ignored `data/cmc-live-evidence.json`, including endpoint, params, retrieval time and credits. Show relevant response fields alongside `packages/cmc/src/normalize.ts` and the [reviewed live excerpt](cmc-live-evidence.md). The script explicitly skips without a key. Never substitute docs examples or fixture outputs for real-call evidence. The public demo remains in fixture mode.
 
 Closing: “MirrorGap turns a suspicious price difference into an inspectable investigation, and makes the boundary of the evidence visible.”
 

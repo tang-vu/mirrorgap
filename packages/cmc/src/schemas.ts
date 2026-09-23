@@ -6,9 +6,11 @@ import { z } from "zod";
  * response passes through these validators at the boundary.
  */
 
+const ApiErrorCodeSchema = z.union([z.number().int(), z.string().regex(/^\d+$/).transform(Number)]);
+
 export const ApiStatusSchema = z.object({
   timestamp: z.string(),
-  error_code: z.number().nullable(),
+  error_code: ApiErrorCodeSchema.nullable(),
   error_message: z.string().nullable(),
   elapsed: z.number().nullable().optional(),
   credit_count: z.number().nullable().optional(),

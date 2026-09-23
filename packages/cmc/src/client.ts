@@ -108,7 +108,7 @@ export class CmcClient {
         const latency = Date.now() - started;
         const body = (await res.json().catch(() => null)) as {
           status?: {
-            error_code?: number | null;
+            error_code?: number | string | null;
             error_message?: string | null;
             credit_count?: number | null;
           };
@@ -116,7 +116,13 @@ export class CmcClient {
         } | null;
 
         if (!res.ok) {
-          const code = body?.status?.error_code ?? null;
+          const rawCode = body?.status?.error_code;
+          const code =
+            typeof rawCode === "number"
+              ? rawCode
+              : typeof rawCode === "string" && /^\d+$/.test(rawCode)
+                ? Number(rawCode)
+                : null;
           const kind = classifyCmcError(res.status, code);
           const err = new CmcError({
             kind,
@@ -146,7 +152,14 @@ export class CmcClient {
         }
 
         const creditCount = body?.status?.credit_count ?? null;
-        this.recordDiag(path, params, latency, res.status, body?.status?.error_code ?? 0, creditCount, "ok");
+        const rawCode = body?.status?.error_code;
+        const code =
+          typeof rawCode === "number"
+            ? rawCode
+            : typeof rawCode === "string" && /^\d+$/.test(rawCode)
+              ? Number(rawCode)
+              : 0;
+        this.recordDiag(path, params, latency, res.status, code, creditCount, "ok");
         const data = body as T;
         if (opts.ttlMs && opts.ttlMs > 0) this.cache.set(key, data, opts.ttlMs);
         return { data, httpStatus: res.status, creditCount, requestId, cacheHit: false, latencyMs: latency };

@@ -71,6 +71,24 @@ describe("CmcClient", () => {
     expect(fetchFn).toHaveBeenCalledTimes(1);
   });
 
+  it("classifies a numeric-string CMC error code", async () => {
+    const fetchFn = vi.fn(async () =>
+      mockResponse(403, {
+        status: {
+          timestamp: "2026-09-18T15:00:00.000Z",
+          error_code: "1006",
+          error_message: "plan gated",
+          credit_count: 0,
+        },
+      }),
+    ) as unknown as typeof fetch;
+    const { client } = clientWith(fetchFn);
+    await expect(client.request("/v5/real-world-assets/market-pairs/list")).rejects.toMatchObject({
+      kind: "plan_gated",
+      cmcErrorCode: 1006,
+    });
+  });
+
   it("retries on 429 with bounded backoff", async () => {
     let calls = 0;
     const fetchFn = vi.fn(async () => {
@@ -188,6 +206,25 @@ describe("CmcAdapter", () => {
     expect(res.provenance.dataMode).toBe("live");
     // key never appears in provenance
     expect(JSON.stringify(res.provenance)).not.toContain(API_KEY);
+  });
+
+  it("accepts the numeric-string status code returned by live CMC quotes", async () => {
+    const fetchFn = vi.fn(async () =>
+      mockResponse(200, {
+        data: quotesBody,
+        status: {
+          timestamp: "2026-09-18T15:00:00.000Z",
+          error_code: "0",
+          error_message: null,
+          credit_count: 1,
+        },
+      }),
+    ) as unknown as typeof fetch;
+    const { client, diagnostics } = clientWith(fetchFn);
+    const adapter = new CmcAdapter({ client, diagnostics, dataMode: "live" });
+    const res = await adapter.getRwaQuotes({ symbol: ["NVDA"] });
+    expect(res.data).toHaveLength(1);
+    expect(diagnostics.entries.some((d) => d.outcome === "schema_error")).toBe(false);
   });
 
   it("throws schema errors on malformed payloads", async () => {
