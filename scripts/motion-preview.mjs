@@ -164,6 +164,29 @@ await page.$eval(".seal-sheet", (e) => e.scrollIntoView({ block: "center" }));
 await page.screenshot({ path: resolve(output, "seal-reset.png") });
 details.resetState = await page.$eval(".seal-sheet", (e) => e.dataset.state);
 await page.setViewport({ width: 390, height: 844 });
+await page.click("#cap-audit");
+await page.waitForFunction(() => document.querySelector(".seal-sheet")?.dataset.state === "passed", {
+  timeout: 20000,
+});
+await page.$eval(".seal-sheet", (e) => e.scrollIntoView({ block: "center" }));
+for (let i = 0; i <= 9; i++) {
+  await page.screenshot({ path: resolve(output, `mobile-seal-audit-${String(i).padStart(2, "0")}.png`) });
+  await new Promise((r) => setTimeout(r, 70));
+}
+await page.$eval("#tamper-json", (e) => {
+  e.value = e.value.replace(/"symbol":\s*"([^"]+)"/, '"symbol": "HACKED"');
+  e.dispatchEvent(new Event("input"));
+});
+await page.click("#tamper-verify");
+await page.waitForFunction(() => document.querySelector(".seal-sheet")?.dataset.state === "failed", {
+  timeout: 20000,
+});
+await page.$eval(".seal-sheet", (e) => e.scrollIntoView({ block: "center" }));
+for (let i = 0; i <= 9; i++) {
+  await page.screenshot({ path: resolve(output, `mobile-seal-tamper-${String(i).padStart(2, "0")}.png`) });
+  await new Promise((r) => setTimeout(r, 70));
+}
+await page.click("#tamper-reset");
 await page.evaluate(() => (location.hash = "#/overview"));
 await page.waitForSelector(".apparatus-carriage", { timeout: 30000 });
 await page.screenshot({ path: resolve(output, "mobile-opening.png") });
