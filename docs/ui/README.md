@@ -1,5 +1,7 @@
 # Observatory captures
 
+The new [motion recordings and five-frame storyboard](../motion-scenes.md) document the three interactive apparatus scenes on desktop and mobile.
+
 These are actual browser screenshots of independent synthetic fixture instances. They contain no live market data. Baseline captures precede the upgrade at `70dbc63`; fixture timestamps and selected observations can differ between runs, so these are visual comparisons, not a historical market series.
 
 | Screen                 | Desktop, 1440 px                        | Mobile, 390 px                         |
