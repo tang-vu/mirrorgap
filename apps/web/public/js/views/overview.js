@@ -1,6 +1,6 @@
 ﻿import { $, api, ago, errorCard, esc, fmt, sevClass } from "../util.js";
 import { mountInstrument } from "../instrument.js";
-import { mountJourney } from "../journey.js";
+import { mountJourney, startJourneyMotion } from "../journey.js";
 const selection = {};
 
 export async function mount(el, ctx) {
@@ -22,13 +22,14 @@ export async function mount(el, ctx) {
           <p>An optical observatory for tokenized markets. Align the observations. Inspect the offsets. Preserve the evidence.</p>
           <a class="text-action" href="#/radar">Explore the observation desk <span>↗</span></a>${events.events?.length ? `<br><a class="text-action" href="#/event/${encodeURIComponent((events.events.find((e) => e.rwaId === ranked[0]?.rwaId) ?? events.events[0]).eventId)}">Replay a retained incident →</a>` : ""}</div>
       </header>
+      <section class="instrument" id="observation-instrument" aria-label="Observation instrument"></section>
+      <button class="motion-scroll-cue" type="button">SCROLL TO FOLLOW ONE FINDING ↓</button>
       <div class="metrics-ribbon">
         ${metric("Assets observed", ov.assetsWatched, `${ov.assetsAnomalous} flagged by the engine`, "radar")}
         ${metric("Open incidents", ov.activeIncidents, `${ov.confirmedIncidents} confirmed`, "events")}
         ${metric("High / critical", ov.criticalOrHigh, "Requires closer review", "events")}
         ${metric("Evidence snapshots", fmt(ov.storage.snapshots, 0), ov.latestScan ? `Last scan ${ago(ov.latestScan.startedAt)}` : "Awaiting first scan", "diagnostics")}
       </div>
-      <section class="instrument" id="observation-instrument" aria-label="Observation instrument"></section>
       <section class="evidence-journey" id="evidence-journey"></section>
       <section class="card incident-ledger">
         <div class="card-head"><div><p class="eyebrow">03 — TRACE</p><h2>Incident ledger</h2></div><a class="text-action" href="#/events">All incidents ↗</a></div>
@@ -63,11 +64,20 @@ export async function mount(el, ctx) {
       cleanup?.();
       cleanup = nextCleanup;
       $("#evidence-journey", el).replaceChildren(surface);
+      startJourneyMotion(surface);
     };
-    el.__afterMount = () => selection.onSelect();
+    el.__afterMount = () => {
+      $(".motion-scroll-cue", el).addEventListener("click", () =>
+        $("#evidence-journey", el).scrollIntoView({
+          behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "instant" : "smooth",
+        }),
+      );
+      selection.onSelect();
+    };
     el.__cleanup = () => {
       version++;
       cleanup?.();
+      selection.disposeInstrument?.();
     };
   } catch (e) {
     el.innerHTML = errorCard(e, true);

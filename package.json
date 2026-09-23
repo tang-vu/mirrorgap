@@ -22,9 +22,11 @@
     "demo:check": "node scripts/demo-check.mjs",
     "demo:workbench": "pnpm -F @mirrorgap/web exec tsx ../../scripts/workbench-check.ts",
     "bench": "node scripts/benchmark.mjs",
-    "e2e": "node scripts/e2e-smoke.mjs"
+    "e2e": "node scripts/e2e-smoke.mjs",
+    "motion:preview": "node scripts/motion-preview.mjs"
   },
   "devDependencies": {
+    "esbuild": "^0.28.2",
     "prettier": "^3.6.2",
     "puppeteer-core": "^24.43.1"
   },

@@ -1,5 +1,6 @@
 /* Evidence Capsule — the public, shareable proof surface for an incident. */
 import { $, $$, api, dateTime, errorCard, esc, fmt, sevClass, stateClass } from "../util.js";
+import { sealMotion } from "../motion.js";
 
 export async function mount(el, ctx, params) {
   const eventId = params[0];
@@ -39,6 +40,15 @@ export async function mount(el, ctx, params) {
         </div>
 
         <div class="check-grid"><div><p class="eyebrow">01 / Payload integrity</p><strong>Schema ${v.schemaOk ? "valid" : "invalid"} · hash ${v.hashOk ? "matches" : "fails"}</strong><p>Checks structure and canonical JSON integrity.</p></div><div><p class="eyebrow">02 / Arithmetic</p><strong id="arithmetic-status">Not yet audited</strong><p>Run Audit calculations to recompute measurement arithmetic.</p></div><div><p class="eyebrow">03 / Signature</p><strong>${v.signatureOk === null ? "Unsigned" : v.signatureOk ? "Signature valid" : "Signature invalid"}</strong><p>A valid signature binds a key, not upstream factual truth.</p></div><div><p class="eyebrow">04 / Source attribution</p><strong>${cap.dataMode === "fixture" ? "Synthetic fixture" : "Provider attributed"}</strong><p>Upstream truth and issuer backing are not authenticated.</p></div></div>
+        <div class="seal-sheet" data-state="ready" aria-label="Evidence seal for receipt ${esc(cap.receiptId)}"><div class="seal-lens"></div><div class="seal-head"><span>SPECIMEN RECEIPT / ${esc(cap.dataMode.toUpperCase())}</span><span>${esc(cap.receipt.generatedAt)}</span></div><div class="seal-slips"><div class="seal-slip seal-altered" data-seal-key="asset"><strong>ASSET / IDENTITY</strong><b data-seal-symbol>${esc(cap.receipt.asset.symbol)}</b><span>${esc(cap.receipt.asset.name)} · RWA ${esc(cap.receipt.asset.rwaId)}</span></div>${cap.receipt.observations
+          .slice(0, 3)
+          .map(
+            (o, i) =>
+              `<div class="seal-slip" data-seal-key="observation-${i}"><strong>${esc(o.role)} / ${esc(o.kind)}</strong>${esc(o.observationId)}<span>${o.price === null ? "absent" : esc(o.price)} ${esc(o.currency)} · ${esc(o.observedAt)}</span></div>`,
+          )
+          .join(
+            "",
+          )}</div><svg class="seal-connections" viewBox="0 0 800 260" preserveAspectRatio="none" aria-hidden="true"><path class="seal-connection" d="M105 120 Q190 205 400 222"/><path class="seal-connection" d="M295 120 Q340 195 400 222"/><path class="seal-connection" d="M500 120 Q465 195 400 222"/><path class="seal-connection" d="M690 120 Q600 205 400 222"/></svg><div class="seal-foot"><span>CANONICAL SHA-256 <strong>${esc(cap.integrity.receiptHash)}</strong></span><span class="seal-stamp" aria-live="polite">AUDIT</span></div></div>
         <section id="audit-result" aria-live="polite"></section>
         <p class="muted">Receipt measurements describe the issuance snapshot. Lifecycle status below may have advanced since issuance. Hash verification does not authenticate upstream data.</p>
         <div class="capsule-grid">
@@ -118,6 +128,8 @@ export async function mount(el, ctx, params) {
         </section>
       </div>`;
 
+    const seal = sealMotion(el);
+    el.__cleanup = () => seal.dispose();
     $$("[data-claim-kind]", el).forEach((button) =>
       button.addEventListener("click", () => {
         const kind = button.dataset.claimKind;
@@ -160,13 +172,37 @@ export async function mount(el, ctx, params) {
     });
     $("#cap-raw", el)?.addEventListener("click", () => $("#cap-raw-section", el)?.classList.toggle("hidden"));
     $("#tamper-json", el).addEventListener("input", () => {
+      $(".seal-sheet", el).dataset.state = "edited";
+      markChanged();
       $("#arithmetic-status", el).textContent = "Edited copy · audit required";
       $("#audit-result", el).textContent = "";
       $("#tamper-result", el).textContent = "";
     });
     const canonical = JSON.stringify(cap.receipt, null, 2);
+    const markChanged = () => {
+      $$(".seal-altered", el).forEach((node) => node.classList.remove("seal-altered"));
+      let key = "asset";
+      try {
+        const edited = JSON.parse($("#tamper-json", el).value);
+        $("[data-seal-symbol]", el).textContent = edited.asset?.symbol ?? cap.receipt.asset.symbol;
+        if (JSON.stringify(edited.asset) === JSON.stringify(cap.receipt.asset)) {
+          const index = cap.receipt.observations.findIndex(
+            (observation, i) => JSON.stringify(observation) !== JSON.stringify(edited.observations?.[i]),
+          );
+          if (index >= 0 && index < 3) key = `observation-${index}`;
+          else if (index < 0) key = "payload";
+        }
+      } catch {
+        $("[data-seal-symbol]", el).textContent = cap.receipt.asset.symbol;
+        key = "payload";
+      }
+      (key === "payload" ? $(".seal-foot", el) : $(`[data-seal-key="${key}"]`, el))?.classList.add(
+        "seal-altered",
+      );
+    };
     $("#cap-audit", el)?.addEventListener("click", async () => {
       const out = $("#audit-result", el);
+      seal.pending();
       try {
         const receipt = JSON.parse($("#tamper-json", el).value);
         const result = await api("/api/v1/receipts/audit", {
@@ -177,6 +213,8 @@ export async function mount(el, ctx, params) {
         $("#arithmetic-status", el).textContent = result.arithmeticOk
           ? "Arithmetic consistent"
           : "Arithmetic failed";
+        seal.result(result.ok);
+        $(".seal-stamp", el).textContent = result.ok ? "AUDIT PASS" : "AUDIT FAIL";
         out.innerHTML = `<h3>${result.ok ? "AUDIT PASS" : "AUDIT FAIL"}</h3>
           <p>Hash ${result.integrity.hashOk ? "matches" : "fails"} · calculations ${result.arithmeticOk ? "consistent" : "inconsistent"}</p>
           <ul>${result.checks
@@ -185,12 +223,17 @@ export async function mount(el, ctx, params) {
             .join("")}</ul>
           <p class="muted">${result.limitations.map(esc).join(" ")}</p>`;
       } catch (err) {
+        seal.result(false);
+        $(".seal-stamp", el).textContent = "AUDIT UNAVAILABLE";
         $("#arithmetic-status", el).textContent = "Audit unavailable";
         out.textContent = `Audit failed: ${err.message}`;
       }
     });
     $("#tamper-reset", el)?.addEventListener("click", () => {
+      seal.reset();
+      $(".seal-stamp", el).textContent = "AUDIT";
       $("#tamper-json", el).value = canonical;
+      markChanged();
       $("#tamper-result", el).textContent = "";
       $("#audit-result", el).textContent = "";
       $("#arithmetic-status", el).textContent = "Not yet audited";
@@ -198,6 +241,7 @@ export async function mount(el, ctx, params) {
     });
     $("#tamper-verify", el)?.addEventListener("click", async () => {
       const out = $("#tamper-result", el);
+      seal.pending();
       try {
         const body = JSON.parse($("#tamper-json", el).value);
         const res = await api("/api/v1/receipts/verify", {
@@ -206,10 +250,14 @@ export async function mount(el, ctx, params) {
           body: JSON.stringify(body),
         });
         out.className = res.ok ? "verify-ok" : "verify-bad";
+        seal.result(res.ok);
+        $(".seal-stamp", el).textContent = res.ok ? "HASH VALID" : "HASH FAILED";
         out.textContent = res.ok
           ? "✓ VALID — hash matches canonical payload"
           : `✗ INVALID — ${res.errors.join("; ") || "hash mismatch"}`;
       } catch (err) {
+        seal.result(false);
+        $(".seal-stamp", el).textContent = "VERIFY FAILED";
         out.className = "verify-bad";
         out.textContent = `✗ ${err.message}`;
       }

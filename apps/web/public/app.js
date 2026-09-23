@@ -189,7 +189,15 @@ setInterval(() => {
 
 // Preserve an active filter or keyboard interaction during background refreshes.
 function isInteracting() {
+  const journey = $("#evidence-journey");
+  const journeyBounds = journey?.getBoundingClientRect();
+  const readingJourney =
+    currentView === "overview" &&
+    journeyBounds &&
+    journeyBounds.top < innerHeight &&
+    journeyBounds.bottom > 0;
   return (
+    readingJourney ||
     document.activeElement?.matches("input, select, textarea, button, a") ||
     Boolean($("#radar-filter")?.value) ||
     $("#radar-sort")?.value === "symbol"

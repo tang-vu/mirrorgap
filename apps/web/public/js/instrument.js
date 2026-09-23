@@ -1,7 +1,9 @@
 import { $, $$, esc, fmt, fmtPct, dateTime } from "./util.js";
+import { openingMotion, moveCarriage } from "./motion.js";
 
 // The scale is shared by every displayed measurement; missing values never become zero.
 export function mountInstrument(el, assets, mode, state = {}) {
+  state.disposeInstrument?.();
   const extent = Math.max(
     1,
     Math.ceil(
@@ -26,6 +28,7 @@ export function mountInstrument(el, assets, mode, state = {}) {
   el.innerHTML = `<div class="instrument-head"><div><p class="eyebrow">REGISTRATION BENCH / 01</p><h2>Several views. One comparison plane.</h2></div><label>Observed asset<select id="instrument-asset">${assets.map((a) => `<option value="${a.rwaId}" ${a.rwaId === selected.rwaId ? "selected" : ""}>${esc(a.symbol)} · ${esc(a.name)}</option>`).join("")}</select></label></div>
     <div class="instrument-context"><span>${esc(mode)} / CMC</span><span>Measured ${dateTime(selected.measuredAt)}</span><span>Freshness at scan: ${esc(selected.referenceFreshness)}</span><span>Market: ${esc(selected.underlyingMarket)}</span></div>
     <div class="bench-layout"><div class="bench-plane divergence-map" role="group" aria-label="Signed wrapper deviation in percent">
+      <div class="apparatus" aria-hidden="true"><div class="apparatus-housing"><span class="apparatus-screw one"></span><span class="apparatus-screw two"></span><div class="apparatus-plane"></div><div class="apparatus-plate rear"></div><div class="apparatus-plate front"></div><div class="apparatus-aperture"></div><div class="apparatus-beam"></div><div class="apparatus-rail"></div>${gaps.map((g) => `<i class="apparatus-mark ${g.gapPct < 0 ? "below" : "above"}" style="left:${50 + (g.gapPct / extent) * 43}%"></i>`).join("")}<div class="apparatus-carriage" style="left:50%"><span></span></div></div><div class="apparatus-caption"><span>OPTICAL REGISTRATION / ${esc(selected.symbol)}</span><span>CMC AGGREGATE / ZERO PLANE</span></div></div>
       <div class="bench-axis"><span>−${fmt(extent, 1)}%</span><span>${gaps.length ? "CMC AGGREGATE / 0" : "REFERENCE UNAVAILABLE"}</span><span>+${fmt(extent, 1)}%</span></div>
       ${gaps.length ? gaps.map((g, i) => `<div class="bench-row"><span class="bench-name">${String(i + 1).padStart(2, "0")} / ${esc(g.tokenSymbol)}</span><div class="bench-track"><span class="zero-line"></span><span class="registration-arm" style="left:${Math.min(50, 50 + (g.gapPct / extent) * 43)}%;width:${Math.abs((g.gapPct / extent) * 43)}%"></span><button class="registration ${g.gapPct < 0 ? "below" : "above"}" style="left:${50 + (g.gapPct / extent) * 43}%" data-wrapper="${esc(g.tokenSymbol)}" aria-label="Inspect ${esc(g.tokenSymbol)}, ${fmtPct(g.gapPct)}" aria-pressed="${state.wrapper === g.tokenSymbol}"><span></span></button></div><span class="bench-value">${fmtPct(g.gapPct)}</span></div>`).join("") : '<div class="empty"><h3>Comparison plane unavailable</h3><p>No comparable reference measurements. Nothing is plotted.</p></div>'}
       <div class="bench-axis"><span>BELOW AGGREGATE</span><span>Signed difference · %</span><span>ABOVE AGGREGATE</span></div>
@@ -36,6 +39,10 @@ export function mountInstrument(el, assets, mode, state = {}) {
     state.wrapper = symbol;
     state.onSelect?.(selected, symbol);
     const g = gaps.find((g) => g.tokenSymbol === symbol);
+    if (g) moveCarriage(el, 50 + (g.gapPct / extent) * 43);
+    $$(".apparatus-mark", el).forEach((mark, index) =>
+      mark.classList.toggle("focal", gaps[index]?.tokenSymbol === symbol),
+    );
     $$(".registration", el).forEach((b) =>
       b.setAttribute("aria-pressed", String(b.dataset.wrapper === symbol)),
     );
@@ -50,4 +57,5 @@ export function mountInstrument(el, assets, mode, state = {}) {
     mountInstrument(el, assets, mode, state);
   });
   inspect(state.wrapper);
+  state.disposeInstrument = openingMotion(el);
 }

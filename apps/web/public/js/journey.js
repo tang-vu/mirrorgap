@@ -1,4 +1,5 @@
-import { $, $$, api, esc, fmtPct, dateTime } from "./util.js";
+﻿import { $, $$, api, esc, fmtPct, dateTime } from "./util.js";
+import { journeyMotion } from "./motion.js";
 
 let retainedId;
 export async function mountJourney(el, allEvents, selection = {}) {
@@ -31,7 +32,7 @@ export async function mountJourney(el, allEvents, selection = {}) {
       [
         "Detect",
         "Name the disagreement.",
-        `${event.assetSymbol} · ${event.kind.replaceAll("_", " ")}. The recorded event is ${event.status}. Disagreement does not establish which wrapper is correct.`,
+        `${event.assetSymbol} Â· ${event.kind.replaceAll("_", " ")}. The recorded event is ${event.status}. Disagreement does not establish which wrapper is correct.`,
         `event/${retainedId}`,
         "Replay the incident",
       ],
@@ -57,9 +58,22 @@ export async function mountJourney(el, allEvents, selection = {}) {
     const extent = Math.max(1, Math.abs(gap?.gapPct ?? 0), Math.abs(evidenceGap?.gapPct ?? 0));
     const annotation = (i) => {
       const g = i === 3 ? evidenceGap : gap;
-      return `<div class="evidence-registration"><span class="eyebrow">${i === 3 ? "ISSUANCE RECEIPT" : "RETAINED FRAME"} / ${esc(selection.wrapper ?? g?.tokenSymbol ?? "unavailable")}</span>${g ? `<div class="annotation-track"><span class="zero-line"></span><i style="left:${50 + (g.gapPct / extent) * 43}%" class="${g.gapPct < 0 ? "below" : "above"}"></i></div><strong>${fmtPct(g.gapPct)}</strong>` : "<p>No retained measurement</p>"}<small>CMC aggregate / signed % · shared ±${fmtPct(extent).replace("+", "")}</small></div>`;
+      return `<div class="evidence-registration"><span class="eyebrow">${i === 3 ? "ISSUANCE RECEIPT" : "RETAINED FRAME"} / ${esc(selection.wrapper ?? g?.tokenSymbol ?? "unavailable")}</span>${g ? `<div class="annotation-track"><span class="zero-line"></span><i style="left:${50 + (g.gapPct / extent) * 43}%" class="${g.gapPct < 0 ? "below" : "above"}"></i></div><strong>${fmtPct(g.gapPct)}</strong>` : "<p>No retained measurement</p>"}<small>CMC aggregate / signed % Â· shared Â±${fmtPct(extent).replace("+", "")}</small></div>`;
     };
-    el.innerHTML = `<div class="journey-title"><p class="eyebrow">02 / A CONTINUOUS EVIDENCE TRAIL</p><h2>Follow one finding.<br>Keep its context.</h2><p>${esc(event.assetSymbol)} / ${esc(retainedId)} / ${esc(d.dataMode)}<br>Retained history, separate from the current bench.</p></div><div class="journey-layout"><nav class="chapter-nav" aria-label="Evidence chapters">${chapters.map((c, i) => `<button data-chapter="${i}" aria-controls="chapter-${i}"><span>0${i + 1}</span>${c[0]}</button>`).join("")}</nav><div>${chapters.map((c, i) => `<section class="journey-chapter" id="chapter-${i}" tabindex="-1"><p class="eyebrow">0${i + 1} / ${c[0]} / ${esc(gap?.tokenSymbol ?? event.assetSymbol)}</p><h3>${c[1]}</h3>${annotation(i)}<p>${esc(c[2])}</p><a class="text-action" href="#/${c[3]}">${c[4]} ↗</a></section>`).join("")}</div></div>`;
+    const specimenX = gap ? 50 + (gap.gapPct / extent) * 40 : 50;
+    const claim = d.investigation?.claims?.find((c) => c.evidenceIds?.length) ?? d.investigation?.claims?.[0];
+    const observationId = frame?.snapshotId ?? "frame only";
+    el.innerHTML = `<div class="journey-title"><p class="eyebrow">02 / A CONTINUOUS EVIDENCE TRAIL</p><h2>Follow one finding.<br>Keep its context.</h2><p>${esc(event.assetSymbol)} / ${esc(retainedId)} / ${esc(d.dataMode)}<br>Retained history, separate from the current bench.</p></div><div class="journey-layout"><nav class="chapter-nav" aria-label="Evidence chapters">${chapters.map((c, i) => `<button data-chapter="${i}" aria-controls="chapter-${i}"><span>0${i + 1}</span>${c[0]}</button>`).join("")}</nav><div class="story-stage" role="img" aria-label="One retained observation travels through four evidence stages"><div class="story-head"><span>RETAINED SPECIMEN / ${esc(gap?.tokenSymbol ?? "UNAVAILABLE")}</span><span>${esc(d.dataMode.toUpperCase())}</span></div><div class="story-optic"><div class="story-specimen"></div><div class="story-axis"></div></div><div class="story-beam"></div><div class="story-bracket" style="left:${specimenX - 40}%"></div>${gap ? `<div class="story-pin" style="left:${specimenX}%"></div>` : ""}<div class="story-measure">${gap ? fmtPct(gap.gapPct) : "NO MEASUREMENT"}</div><svg class="story-paths" viewBox="0 0 500 500" preserveAspectRatio="none" aria-hidden="true">${(
+      claim?.evidenceIds ?? []
+    )
+      .slice(0, 2)
+      .map(
+        (id, i) =>
+          `<path class="story-link" data-reference="${esc(id)}" d="${i === 0 ? "M250 290 C290 350 340 340 365 395" : "M250 290 C200 340 170 370 145 420"}"/>`,
+      )
+      .join(
+        "",
+      )}</svg><div class="story-slips"><div class="story-slip">RETAINED SNAPSHOT / ${esc(observationId)}<br>${dateTime(frame?.at)} Â· ${esc(gap?.tokenSymbol ?? "unavailable")}</div><div class="story-slip">SOURCE / CMC tokenized aggregate<br>${esc(frame?.frame?.aggregateFreshness ?? "unavailable")} Â· ${esc(frame?.frame?.underlyingMarket ?? "unknown")} market</div><div class="story-slip">CLAIM / ${esc(claim?.kind ?? "unclassified")}<br>${esc(claim?.evidenceIds?.join(" Â· ") || "No linked evidence reference")}</div><div class="story-slip missing">INDEPENDENT UNDERLYING / EMPTY SLOT<br>No attributed independent quote in this receipt</div></div><div class="story-dossier">EVIDENCE DOSSIER<strong>${esc(d.receipt?.receiptId ?? "RECEIPT PENDING")}</strong><span>Earlier frame / ${gap ? fmtPct(gap.gapPct) : "unavailable"}</span><span>Issuance / ${evidenceGap ? fmtPct(evidenceGap.gapPct) : "unavailable"}</span><span>${esc(d.receipt?.receiptHash?.slice(0, 24) ?? "No issued hash")}â€¦</span></div></div><div class="journey-chapters">${chapters.map((c, i) => `<section class="journey-chapter" id="chapter-${i}" data-index="${i}" tabindex="-1"><p class="eyebrow">0${i + 1} / ${c[0]} / ${esc(gap?.tokenSymbol ?? event.assetSymbol)}</p><h3>${c[1]}</h3>${annotation(i)}<p>${esc(c[2])}</p><a class="text-action" href="#/${c[3]}">${c[4]} â†—</a></section>`).join("")}</div></div>`;
     $$("[data-chapter]", el).forEach((b) =>
       b.addEventListener("click", () => {
         const target = $(`#chapter-${b.dataset.chapter}`, el);
@@ -70,20 +84,14 @@ export async function mountJourney(el, allEvents, selection = {}) {
         });
       }),
     );
-    const observer = new IntersectionObserver(
-      (entries) =>
-        entries.forEach((entry) => {
-          if (entry.isIntersecting)
-            $$("[data-chapter]", el).forEach((b) =>
-              b.setAttribute("aria-current", String(`chapter-${b.dataset.chapter}` === entry.target.id)),
-            );
-        }),
-      { rootMargin: "-20% 0px -40% 0px" },
-    );
-    $$(".journey-chapter", el).forEach((s) => observer.observe(s));
-    return () => observer.disconnect();
+    return () => el.__storyCleanup?.();
   } catch {
     el.innerHTML =
-      '<p class="empty">Retained incident unavailable. <a href="#/events">Browse the incident register →</a></p>';
+      '<p class="empty">Retained incident unavailable. <a href="#/events">Browse the incident register â†’</a></p>';
   }
+}
+
+export function startJourneyMotion(el) {
+  el.__storyCleanup?.();
+  el.__storyCleanup = journeyMotion(el);
 }
