@@ -2,7 +2,7 @@
 
 MirrorGap investigates tokenized-asset price gaps with CMC RWA data: compare wrappers, challenge the reference, and audit the evidence.
 
-Demo: <demo-video-url>
+Demo: https://youtu.be/rqIeHMNVLhk
 Submission: <dorahacks-url>
 #BuildwithCMC
 
@@ -14,4 +14,4 @@ A matching hash is not enough: MirrorGap also recalculates receipt arithmetic. T
 
 Repo: https://github.com/tang-vu/mirrorgap
 
-Replace the submission/video placeholders only after those artifacts exist. No real market incident, real trade, user adoption or source authenticity is claimed by the fixture demo.
+Replace the submission placeholder only after that artifact exists. No real market incident, real trade, user adoption or source authenticity is claimed by the fixture demo.

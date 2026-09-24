@@ -1,5 +1,7 @@
 # MirrorGap short demo video
 
+Watch: https://youtu.be/rqIeHMNVLhk
+
 The render uses the repository's fixture UI captures and a VoiceTake personal-voice WAV. All shown observations are synthetic. The narration and video are local artifacts under ignored `data/video-demo/`; the speaker's voice is not checked into the public repository.
 
 ## Narration

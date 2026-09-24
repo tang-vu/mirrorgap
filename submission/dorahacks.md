@@ -48,11 +48,11 @@ CMC's RWA endpoints supply the tokenized aggregate (`average_tokenized_price`), 
 - Repo: https://github.com/tang-vu/mirrorgap
 - Public demo (synthetic fixture): https://mirrorgap.tangvu.dev
 - Live CMC call, code and response excerpt: `docs/cmc-live-evidence.md`
-- Demo video: <demo-video-url>
+- Demo video: https://youtu.be/rqIeHMNVLhk (short fixture walkthrough)
 - Docs: `docs/cmc-api-usage.md` (endpoints + field mapping), `docs/cmc-api-feedback.md` (honest API feedback), `docs/demo-script.md`
 
 ## Honest boundaries
 
 Market hours modeled for US equity venues only (others → `unknown`). No trading signals, no arbitrage, no price prediction — this is an integrity layer, not a trading tool. Optional LLM narration can only re-word the deterministic claim ledger.
 
-Independent underlying quotes are analyst supplied, not automatically fetched or source authenticated. Receipt hashes verify integrity, not CMC authorship or issuer backing. Workbench agent policy is guidance to consumers, not an execution sandbox. See `docs/upgrade-validation.md` for actual test results and remaining submission artifacts. The public deployment uses fixture data; no demo-video publication or X post is implied by this draft.
+Independent underlying quotes are analyst supplied, not automatically fetched or source authenticated. Receipt hashes verify integrity, not CMC authorship or issuer backing. Workbench agent policy is guidance to consumers, not an execution sandbox. See `docs/upgrade-validation.md` for actual test results and remaining submission artifacts. The public deployment and short video use clearly labeled fixture data. This draft does not imply an X post has been published.

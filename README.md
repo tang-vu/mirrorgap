@@ -2,7 +2,7 @@
 
 > **Is tokenized reality still matching reality?**
 
-**[Open the demo](https://mirrorgap.tangvu.dev)** — the public demo uses clearly labeled synthetic fixture data.
+**[Open the demo](https://mirrorgap.tangvu.dev)** · **[Watch the short video](https://youtu.be/rqIeHMNVLhk)** — both show clearly labeled synthetic fixture data.
 
 See the [live CMC API call and reviewed response excerpt](docs/cmc-live-evidence.md) for separate evidence of the real RWA integration.
 
